@@ -1,31 +1,88 @@
 <template>
   <div class="max-w-4xl mx-auto">
     <!-- 步骤指示器 -->
-    <div class="mb-12">
-      <div class="flex justify-between items-center">
-        <div class="progress-step completed">
-          <div class="progress-step-number">1</div>
-          <span class="ml-2 text-sm text-secondary-600">选择数据源</span>
+    <div class="mb-16 px-4">
+      <div class="flex items-center justify-between w-full relative">
+        <!-- Step 1: Completed -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold ring-4 ring-white z-10"
+          >
+            <i class="fa fa-check"></i>
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-green-600"
+          >
+            选择数据源
+          </div>
         </div>
-        <div class="progress-step-line bg-green-500"></div>
-        <div class="progress-step completed">
-          <div class="progress-step-number">2</div>
-          <span class="ml-2 text-sm text-secondary-600">文档处理</span>
+
+        <!-- Line: Green -->
+        <div class="flex-1 h-0.5 bg-green-500 mx-2 rounded"></div>
+
+        <!-- Step 2: Completed -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold ring-4 ring-white z-10"
+          >
+            <i class="fa fa-check"></i>
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-green-600"
+          >
+            文档处理
+          </div>
         </div>
-        <div class="progress-step-line bg-green-500"></div>
-        <div class="progress-step completed">
-          <div class="progress-step-number">3</div>
-          <span class="ml-2 text-sm text-secondary-600">选择模板</span>
+
+        <!-- Line: Green -->
+        <div class="flex-1 h-0.5 bg-green-500 mx-2 rounded"></div>
+
+        <!-- Step 3: Completed -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold ring-4 ring-white z-10"
+          >
+            <i class="fa fa-check"></i>
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-green-600"
+          >
+            选择模板
+          </div>
         </div>
-        <div class="progress-step-line bg-green-500"></div>
-        <div class="progress-step completed">
-          <div class="progress-step-number">4</div>
-          <span class="ml-2 text-sm text-secondary-600">生成摘要</span>
+
+        <!-- Line: Green -->
+        <div class="flex-1 h-0.5 bg-green-500 mx-2 rounded"></div>
+
+        <!-- Step 4: Completed -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold ring-4 ring-white z-10"
+          >
+            <i class="fa fa-check"></i>
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-green-600"
+          >
+            生成摘要
+          </div>
         </div>
-        <div class="progress-step-line bg-green-500"></div>
-        <div class="progress-step active">
-          <div class="progress-step-number">5</div>
-          <span class="ml-2 text-sm text-secondary-600">查看结果</span>
+
+        <!-- Line: Green -->
+        <div class="flex-1 h-0.5 bg-green-500 mx-2 rounded"></div>
+
+        <!-- Step 5: Active -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center font-bold shadow-lg shadow-primary-500/30 ring-4 ring-white z-10 transition-transform group-hover:scale-105"
+          >
+            5
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-sm font-bold text-primary-700"
+          >
+            查看结果
+          </div>
         </div>
       </div>
     </div>
@@ -33,13 +90,19 @@
     <!-- 页面标题 -->
     <h1 class="text-3xl font-bold mb-2">{{ summary.title }}</h1>
     <p class="text-secondary-500 mb-8">
-      生成时间: {{ formatDate(summary.date) }} | 来源: {{ sourceCount }}个{{ dataSourceType === 'knowledgeBase' ? '知识库文档' : 'OCR识别文档' }}
+      生成时间: {{ formatDate(summary.date) }} | 来源: {{ sourceCount }}个{{
+        dataSourceType === "knowledgeBase" ? "知识库文档" : "OCR识别文档"
+      }}
     </p>
 
     <!-- 摘要内容 -->
     <div class="card mb-8">
       <div class="prose max-w-none">
-        <p v-for="(paragraph, index) in summary.content.split('\n\n')" :key="index" class="mb-4">
+        <p
+          v-for="(paragraph, index) in summary.content.split('\n\n')"
+          :key="index"
+          class="mb-4"
+        >
           {{ paragraph }}
         </p>
       </div>
@@ -85,68 +148,68 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAppStore } from '../store'
+import { ref, computed } from "vue";
+import { useRouter } from "vue-router";
+import { useAppStore } from "../store";
 
-const router = useRouter()
-const store = useAppStore()
+const router = useRouter();
+const store = useAppStore();
 
 // 摘要内容
-const summary = ref(store.generatedSummary)
+const summary = ref(store.generatedSummary);
 
 // 数据源类型
-const dataSourceType = ref(store.dataSourceType)
+const dataSourceType = ref(store.dataSourceType);
 
 // 来源数量
 const sourceCount = computed(() => {
-  return dataSourceType.value === 'knowledgeBase' 
-    ? store.selectedDocuments.length 
-    : store.ocrResults.length
-})
+  return dataSourceType.value === "knowledgeBase"
+    ? store.selectedDocuments.length
+    : store.ocrResults.length;
+});
 
 // 重新生成表单显示状态
-const showRegenerateForm = ref(false)
+const showRegenerateForm = ref(false);
 
 // 优化提示词
-const optimizationPrompt = ref('')
+const optimizationPrompt = ref("");
 
 // 格式化日期
 const formatDate = (dateString) => {
-  const date = new Date(dateString)
-  return date.toLocaleString()
-}
+  const date = new Date(dateString);
+  return date.toLocaleString();
+};
 
 // 导出PDF
 const exportToPdf = () => {
-  store.exportToPdf()
-}
+  store.exportToPdf();
+};
 
 // 导出Word
 const exportToWord = () => {
-  store.exportToWord()
-}
+  store.exportToWord();
+};
 
 // 重新生成
 const regenerateSummary = () => {
-  showRegenerateForm.value = true
-}
+  showRegenerateForm.value = true;
+};
 
 // 取消重新生成
 const cancelRegenerate = () => {
-  showRegenerateForm.value = false
-  optimizationPrompt.value = ''
-}
+  showRegenerateForm.value = false;
+  optimizationPrompt.value = "";
+};
 
 // 提交重新生成
 const submitRegeneration = () => {
   if (optimizationPrompt.value.trim()) {
-    store.regenerateSummary(optimizationPrompt.value)
-    summary.value = store.generatedSummary
-    showRegenerateForm.value = false
-    optimizationPrompt.value = ''
+    store.regenerateSummary(optimizationPrompt.value);
+    summary.value = store.generatedSummary;
+    showRegenerateForm.value = false;
+    optimizationPrompt.value = "";
   }
-}
+};
 </script>
 
 <style scoped>

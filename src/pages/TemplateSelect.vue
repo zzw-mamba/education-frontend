@@ -1,31 +1,88 @@
 <template>
   <div class="max-w-4xl mx-auto">
     <!-- 步骤指示器 -->
-    <div class="mb-12">
-      <div class="flex justify-between items-center">
-        <div class="progress-step completed">
-          <div class="progress-step-number">1</div>
-          <span class="ml-2 text-sm text-secondary-600">选择数据源</span>
+    <div class="mb-16 px-4">
+      <div class="flex items-center justify-between w-full relative">
+        <!-- Step 1: Completed -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold ring-4 ring-white z-10"
+          >
+            <i class="fa fa-check"></i>
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-green-600"
+          >
+            选择数据源
+          </div>
         </div>
-        <div class="progress-step-line bg-green-500"></div>
-        <div class="progress-step completed">
-          <div class="progress-step-number">2</div>
-          <span class="ml-2 text-sm text-secondary-600">文档处理</span>
+
+        <!-- Line: Green -->
+        <div class="flex-1 h-0.5 bg-green-500 mx-2 rounded"></div>
+
+        <!-- Step 2: Completed -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold ring-4 ring-white z-10"
+          >
+            <i class="fa fa-check"></i>
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-green-600"
+          >
+            文档处理
+          </div>
         </div>
-        <div class="progress-step-line bg-green-500"></div>
-        <div class="progress-step active">
-          <div class="progress-step-number">3</div>
-          <span class="ml-2 text-sm text-secondary-600">选择模板</span>
+
+        <!-- Line: Green -->
+        <div class="flex-1 h-0.5 bg-green-500 mx-2 rounded"></div>
+
+        <!-- Step 3: Active -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center font-bold shadow-lg shadow-primary-500/30 ring-4 ring-white z-10 transition-transform group-hover:scale-105"
+          >
+            3
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-sm font-bold text-primary-700"
+          >
+            选择模板
+          </div>
         </div>
-        <div class="progress-step-line"></div>
-        <div class="progress-step">
-          <div class="progress-step-number">4</div>
-          <span class="ml-2 text-sm text-secondary-600">生成摘要</span>
+
+        <!-- Line: Gray -->
+        <div class="flex-1 h-0.5 bg-gray-200 mx-2 rounded"></div>
+
+        <!-- Step 4: Inactive -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-white border-2 border-gray-200 text-gray-400 flex items-center justify-center font-medium ring-4 ring-white z-10"
+          >
+            4
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-gray-400"
+          >
+            生成摘要
+          </div>
         </div>
-        <div class="progress-step-line"></div>
-        <div class="progress-step">
-          <div class="progress-step-number">5</div>
-          <span class="ml-2 text-sm text-secondary-600">查看结果</span>
+
+        <!-- Line: Gray -->
+        <div class="flex-1 h-0.5 bg-gray-200 mx-2 rounded"></div>
+
+        <!-- Step 5: Inactive -->
+        <div class="flex flex-col items-center relative group cursor-default">
+          <div
+            class="w-8 h-8 rounded-full bg-white border-2 border-gray-200 text-gray-400 flex items-center justify-center font-medium ring-4 ring-white z-10"
+          >
+            5
+          </div>
+          <div
+            class="absolute -bottom-8 w-32 text-center text-xs font-medium text-gray-400"
+          >
+            查看结果
+          </div>
         </div>
       </div>
     </div>
@@ -170,10 +227,22 @@
         <div v-else class="text-sm text-secondary-500">未选择文件</div>
       </div>
 
-      <div v-if="reportPreview" class="mb-4">
-        <div class="text-sm font-medium text-secondary-700 mb-1">解析预览</div>
+      <div v-if="reportPreview" class="mb-6">
+        <div class="flex items-center justify-between mb-2">
+          <div
+            class="text-sm font-semibold text-secondary-700 flex items-center"
+          >
+            <i class="fa fa-file-code-o mr-2 text-primary-600"></i>
+            模板结构预览
+          </div>
+          <span
+            class="text-xs text-primary-600 bg-primary-50 px-2 py-1 rounded border border-primary-100 font-medium"
+          >
+            AI 生成结果
+          </span>
+        </div>
         <div
-          class="bg-gray-50 p-3 rounded text-sm text-secondary-700 max-h-40 overflow-auto"
+          class="bg-[#f8fafc] border border-slate-200 p-4 rounded-lg text-sm text-slate-700 max-h-[600px] overflow-y-auto shadow-inner font-mono leading-relaxed whitespace-pre-wrap selection:bg-primary-100 selection:text-primary-900"
         >
           {{ reportPreview }}
         </div>
@@ -284,15 +353,8 @@ const generateTemplateFromReport = async () => {
     // 将解析生成的 preview 放到 preview 区显示
     reportPreview.value =
       newTemplate.preview ||
-      (reportRawContent.value
-        ? reportRawContent.value.slice(0, 2000)
-        : "(无可用预览)");
-    // 不在上面的模板列表中显示由报告生成的临时模板，仅在下方显示解析预览
-    try {
-      store.templates = store.templates.filter((t) => t.id !== newTemplate.id);
-    } catch (e) {
-      // ignore if mutation fails
-    }
+      (reportRawContent.value ? reportRawContent.value : "(无可用预览)");
+
     // 把已上传的源内容清除（可选）
     // reportFile.value = null
   } catch (err) {

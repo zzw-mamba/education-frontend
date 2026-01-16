@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import api from '../services/api'
+import api, { buildTemplate } from '../services/api'
 import * as authApi from '../services/auth'
 
 export const useAppStore = defineStore('app', {
@@ -87,6 +87,7 @@ export const useAppStore = defineStore('app', {
     ],
     selectedTemplate: null,
     customPrompt: '',
+    summaryTopic: '', // 用户指定的摘要主题
 
     // 摘要状态
     generatedSummary: null,
@@ -248,12 +249,10 @@ export const useAppStore = defineStore('app', {
     selectDocument(document) {
       if (!this.selectedDocuments.some(doc => doc.id === document.id)) {
         this.selectedDocuments.push(document)
-        this.getRecommendations()
       }
     },
     deselectDocument(documentId) {
       this.selectedDocuments = this.selectedDocuments.filter(doc => doc.id !== documentId)
-      this.getRecommendations()
     },
     getRecommendations() {
       // 模拟API请求
@@ -290,7 +289,6 @@ export const useAppStore = defineStore('app', {
     // OCR操作
     uploadFiles(files) {
       this.uploadedFiles = [...this.uploadedFiles, ...files]
-      this.processOcr()
     },
     removeUploadedFile(fileName) {
       // 根据文件名移除上传的文件
@@ -330,9 +328,11 @@ export const useAppStore = defineStore('app', {
                 fileName: file.name,
                 fileSize: file.size,
                 pages: response.pages || 1,
-                content: response.markdown || response.content || '',
-                confidence: response.confidence || 95
+                content: response || '',
+                markdown: response || '',
+                isMarkdown: true
               })
+              console.log(results)
             } else {
               // 非PDF/图片文件：添加错误提示
               results.push({
@@ -341,7 +341,6 @@ export const useAppStore = defineStore('app', {
                 fileSize: file.size,
                 pages: 0,
                 content: `不支持的文件类型。请上传PDF或图片文件（JPEG、PNG、GIF、WebP、BMP、TIFF）。`,
-                confidence: 0,
                 error: true
               })
             }
@@ -449,57 +448,62 @@ export const useAppStore = defineStore('app', {
       this.templates = [copy, ...this.templates]
       return copy
     },
-    // 上传并解析模板报告（前端模拟解析）
+    // 上传并解析模板报告（调用后端AI生成）
     async uploadTemplateReport(file) {
-      // 支持简易的文本解析（.txt/.md/.json），其他类型则创建占位模板
-      const createTemplateFromText = (text, fileName) => {
-        const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
-        const name = lines[0] ? lines[0].slice(0, 50) : (fileName || '自定义模板')
-        const description = lines[1] || (lines.slice(0, 3).join(' ') || '由上传的模板报告解析生成')
-        const preview = text.slice(0, 200)
-        const prompt = text
-        return {
-          id: Date.now() + Math.floor(Math.random() * 1000),
-          name,
-          description,
-          preview,
-          prompt
-        }
-      }
-
       try {
         this.isLoading = true
         const isText = /text|json|markdown|plain/.test(file.type) || /\.(txt|md|json)$/i.test(file.name)
         let template
+
         if (isText) {
+          // 1. 读取文件内容
           const text = await new Promise((resolve, reject) => {
             const reader = new FileReader()
             reader.onload = () => resolve(String(reader.result))
             reader.onerror = () => reject(new Error('读取文件失败'))
-            reader.readAsText(file)
+            reader.readAsText(file) // 读取为文本
           })
-          template = createTemplateFromText(text, file.name)
+
+          // 2. 调用后端 API 生成模板结构
+          // 注意：这里把文件内容作为 description 传给后端
+          const response = await buildTemplate(text)
+          // 根据 Python 代码，返回的是 JSON 对象，包含 content 字段
+          // axios 拦截器通常已经把 response.data 返回了，所以 response 就是 data
+          const generatedContent = response.content || ''
+
+          template = {
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            name: file.name.replace(/\.[^.]+$/, '') + ' (AI生成)',
+            description: '基于上传报告由 AI 自动生成的摘要模板',
+            preview: generatedContent,
+            prompt: generatedContent // 将生成的模板结构直接作为 prompt
+          }
         } else {
-          // 非文本文件：使用文件名生成占位模板
+          // 非文本文件：暂时无法读取内容传给 LLM
+          // 仍然保留占位逻辑，或者提示用户不支持
           template = {
             id: Date.now() + Math.floor(Math.random() * 1000),
             name: file.name.replace(/\.[^.]+$/, ''),
-            description: '从上传文件生成的模板（原文件为非文本，需手动调整）',
-            preview: '（无法自动解析二进制文件）',
+            description: '上传文件（非文本格式，未生成结构）',
+            preview: '（无法自动解析二进制文件，请上传 .txt/.md/.json 等文本文件）',
             prompt: `请根据文件 ${file.name} 中的内容生成摘要。`
           }
+          this.errorMessage = '注意：非文本文件无法通过 AI 生成模板结构'
         }
 
         // 将新模板插入到列表顶部
         this.templates = [template, ...this.templates]
         // 自动选择新模板
         this.selectedTemplate = template
-        this.successMessage = '模板报告解析并生成成功'
+        if (isText) {
+          this.successMessage = '模板报告解析并生成成功'
+        }
         this.isLoading = false
         return template
       } catch (err) {
         this.isLoading = false
-        this.errorMessage = err.message || '解析模板失败'
+        this.errorMessage = err.message || '生成模板失败'
+        console.error(err)
         throw err
       }
     },
