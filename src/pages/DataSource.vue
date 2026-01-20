@@ -88,7 +88,7 @@
     </div>
 
     <!-- 页面标题 -->
-    <div class="text-center mb-10">
+    <div class="text-center mb-10 pt-10">
       <h1
         class="text-3xl md:text-4xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-primary-700 to-primary-500"
       >
@@ -101,15 +101,15 @@
 
     <!-- 数据源选项卡 -->
     <div
-      class="card p-0 overflow-hidden mb-12 border-0 shadow-xl shadow-gray-200/50"
+      class="card p-0 overflow-hidden mb-12 rounded-2xl border border-gray-300 bg-gradient-to-b from-white to-gray-50 shadow-xl shadow-gray-300/60 ring-1 ring-gray-300/70 hover:ring-gray-400 hover:shadow-2xl hover:-translate-y-0.5 transition-all duration-300"
     >
-      <div class="flex bg-gray-50/80 p-2 gap-2 border-b border-gray-100">
+      <div class="flex bg-gray-50/80 p-2 gap-2 border-b border-gray-200">
         <button
           @click="selectDataSource('knowledgeBase')"
-          class="flex-1 py-4 px-6 text-center font-bold text-lg rounded-xl transition-all duration-300 flex items-center justify-center gap-3"
+          class="flex-1 py-4 px-6 text-center font-bold text-lg rounded-xl transition-all duration-300 flex items-center justify-center gap-3 focus:outline-none focus:ring-0 focus-visible:outline-none"
           :class="
             dataSourceType === 'knowledgeBase'
-              ? 'bg-white text-primary-600 shadow-md transform scale-[1.02]'
+              ? 'bg-white text-primary-700 shadow-md'
               : 'text-secondary-500 hover:bg-white/50 hover:text-secondary-700'
           "
         >
@@ -117,10 +117,10 @@
         </button>
         <button
           @click="selectDataSource('ocr')"
-          class="flex-1 py-4 px-6 text-center font-bold text-lg rounded-xl transition-all duration-300 flex items-center justify-center gap-3"
+          class="flex-1 py-4 px-6 text-center font-bold text-lg rounded-xl transition-all duration-300 flex items-center justify-center gap-3 focus:outline-none focus:ring-0 focus-visible:outline-none"
           :class="
             dataSourceType === 'ocr'
-              ? 'bg-white text-primary-600 shadow-md transform scale-[1.02]'
+              ? 'bg-white text-primary-700 shadow-md'
               : 'text-secondary-500 hover:bg-white/50 hover:text-secondary-700'
           "
         >
@@ -363,38 +363,10 @@
 
         <!-- 本地文档上传选项 -->
         <div v-if="dataSourceType === 'ocr'" class="animate-fade-in">
-          <div
-            class="border-3 border-dashed border-gray-200 rounded-2xl p-12 text-center mb-8 hover:border-primary-300 hover:bg-primary-50/30 transition-all duration-300 group"
-          >
-            <div
-              class="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-primary-100 transition-colors"
-            >
-              <i
-                class="fa fa-cloud-upload text-4xl text-secondary-400 group-hover:text-primary-500 transition-colors"
-              ></i>
-            </div>
-            <h3 class="text-xl font-bold text-secondary-800 mb-2">
-              点击或拖拽文件上传
-            </h3>
-            <p class="text-secondary-500 mb-8">
-              支持 PDF, JPG, JPEG, PNG (最大 20MB)
-            </p>
-            <label class="btn-primary cursor-pointer inline-flex items-center">
-              <i class="fa fa-folder-open mr-2"></i> 选择文件
-              <input
-                type="file"
-                class="hidden"
-                multiple
-                accept=".pdf,.jpg,.jpeg,.png"
-                @change="handleFileUpload"
-              />
-            </label>
-          </div>
-
           <!-- 已上传文件列表 -->
           <div
             v-if="store.uploadedFiles && store.uploadedFiles.length"
-            class="mb-8 bg-gray-50 rounded-xl p-6 border border-gray-100"
+            class="mb-6 bg-gray-50 rounded-xl p-6 border border-gray-100"
           >
             <h4
               class="text-sm font-bold text-secondary-700 mb-4 flex items-center justify-between"
@@ -437,6 +409,44 @@
           </div>
 
           <div
+            :class="[
+              'border-2 border-dashed rounded-2xl text-center mb-8 transition-all duration-300 group bg-gradient-to-br from-white via-gray-50/70 to-white shadow-2xl shadow-gray-300/80 border-gray-300 ring-1 ring-gray-200 hover:shadow-[0_18px_38px_-8px_rgba(107,114,128,0.55)] hover:-translate-y-0.5 hover:border-gray-400 hover:ring-gray-300 hover:from-white hover:via-gray-75 hover:to-white backdrop-blur-[1px]',
+              hasUploadedFiles ? 'p-8' : 'p-12',
+            ]"
+          >
+            <div
+              :class="[
+                'bg-white shadow-inner rounded-full flex items-center justify-center mx-auto mb-6 group-hover:bg-primary-50 transition-colors border border-primary-100/60',
+                hasUploadedFiles ? 'w-14 h-14' : 'w-20 h-20',
+              ]"
+            >
+              <i
+                :class="[
+                  'fa fa-cloud-upload text-primary-500/80 group-hover:text-primary-600 transition-colors',
+                  hasUploadedFiles ? 'text-3xl' : 'text-4xl',
+                ]"
+              ></i>
+            </div>
+            <h3 class="text-xl font-bold text-secondary-800 mb-2">
+              点击或拖拽文件上传
+            </h3>
+            <p class="text-secondary-500 mb-8">
+              支持 PDF, JPG, JPEG, PNG (最大 20MB)
+            </p>
+            <label class="btn-primary cursor-pointer inline-flex items-center">
+              <i class="fa fa-folder-open mr-2"></i> 选择文件
+              <input
+                type="file"
+                class="hidden"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png"
+                @change="handleFileUpload"
+              />
+            </label>
+          </div>
+
+          <div
+            v-if="!hasUploadedFiles"
             class="bg-blue-50/50 border border-blue-100 rounded-2xl p-6 flex items-start gap-4"
           >
             <div
@@ -456,7 +466,9 @@
     </div>
 
     <!-- 摘要主题设置 -->
-    <div class="card p-8 mb-8 shadow-lg shadow-gray-200/50 border-0">
+    <div
+      class="card p-8 mb-8 rounded-2xl border border-gray-300 ring-1 ring-gray-200 shadow-2xl shadow-gray-400/60"
+    >
       <h3 class="text-xl font-bold text-secondary-800 mb-4 flex items-center">
         <i class="fa fa-lightbulb-o text-primary-500 mr-2"></i>
         摘要主题设置
@@ -569,6 +581,11 @@ const searchKeywords = ref(store.searchKeywords);
 
 // 搜索结果
 const searchResults = ref([]);
+
+// 上传状态
+const hasUploadedFiles = computed(
+  () => store.uploadedFiles && store.uploadedFiles.length > 0
+);
 
 // 预览相关状态
 const showPreviewModal = ref(false);

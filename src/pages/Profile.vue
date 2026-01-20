@@ -21,7 +21,7 @@
               {{ initials }}
             </div>
             <div>
-              <h2 class="text-2xl font-bold">{{ profile.name }}</h2>
+              <h2 class="text-2xl font-bold">{{ profile.username }}</h2>
             </div>
             <div class="space-y-2 text-sm text-blue-50">
               <div class="flex items-center gap-2">
@@ -311,7 +311,7 @@ const security = reactive({
 });
 
 const initials = computed(() =>
-  profile.name ? profile.name.slice(0, 2) : "用户"
+  profile.username ? profile.username : "用户"
 );
 
 const mergeProfile = (data) => {

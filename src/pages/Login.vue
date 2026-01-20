@@ -203,15 +203,21 @@ const loginForm = reactive({
 const handleLogin = async () => {
   errorMessage.value = "";
   try {
-    await store.login({
+    const response = await store.login({
       username: loginForm.username,
       password: loginForm.password,
     });
-    await store.fetchProfile();
+    // 登录成功后，根据查询参数决定是否跳转回原页面
+    const redirect = router.currentRoute.value.query.redirect;
+    if (redirect) {
+      router.push(redirect);
+    } else {
+      router.push("/profile");
+    }
+    // 可选：记住登录用户名
     if (loginForm.remember) {
       localStorage.setItem("remember_username", loginForm.username);
     }
-    router.push("/profile");
   } catch (err) {
     errorMessage.value =
       err?.response?.data?.detail || err.message || "登录失败";

@@ -10,6 +10,7 @@ import ResultView from '../pages/ResultView.vue'
 import Login from '../pages/Login.vue'
 import Register from '../pages/Register.vue'
 import Profile from '../pages/Profile.vue'
+import { useAppStore } from '../store'
 
 const routes = [
   {
@@ -30,39 +31,47 @@ const routes = [
   {
     path: '/profile',
     name: 'Profile',
-    component: Profile
+    component: Profile,
+    meta: { requiresAuth: true }
   },
   {
     path: '/data-source',
     name: 'DataSource',
-    component: DataSource
+    component: DataSource,
+    meta: { requiresAuth: true }
   },
   {
     path: '/knowledge-base',
     name: 'KnowledgeBase',
-    component: KnowledgeBase
+    component: KnowledgeBase,
+    meta: { requiresAuth: true }
   },
   {
     path: '/ocr-upload',
     name: 'OcrUpload',
+    meta: { requiresAuth: true },
     component: OcrUpload
   },
   {
     path: '/template-select',
+    meta: { requiresAuth: true },
     name: 'TemplateSelect',
     component: TemplateSelect
   },
   {
     path: '/template-library',
+    meta: { requiresAuth: true },
     name: 'TemplateLibrary',
     component: TemplateLibrary
   },
   {
+    meta: { requiresAuth: true },
     path: '/summary-generate',
     name: 'SummaryGenerate',
     component: SummaryGenerate
   },
   {
+    meta: { requiresAuth: true },
     path: '/result-view',
     name: 'ResultView',
     component: ResultView
@@ -75,10 +84,20 @@ const router = createRouter({
 })
 
 // 导航守卫
-router.beforeEach((to, from, next) => {
-  // 可以在这里实现步骤控制逻辑
-  // 例如：只有完成前一步才能进入下一步
-  next()
+router.beforeEach(async (to, from, next) => {
+  const store = useAppStore()
+
+  // 检查路由是否需要登录
+  if (to.meta.requiresAuth && !store.isAuthenticated) {
+    // 显示自定义认证对话框
+    if (globalThis.$authDialog && globalThis.$authDialog.value) {
+      globalThis.$authDialog.value.show(to.fullPath)
+    }
+    // 停留在当前页面
+    next(false)
+  } else {
+    next()
+  }
 })
 
 export default router

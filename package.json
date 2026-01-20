@@ -9,8 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@kangc/v-md-editor": "^2.3.18",
     "axios": "^1.7.2",
+    "element-plus": "^2.13.1",
     "font-awesome": "^4.7.0",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.27",
     "marked": "^17.0.1",
     "pinia": "^3.0.4",
     "vue": "^3.4.31",

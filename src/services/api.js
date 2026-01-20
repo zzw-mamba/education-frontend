@@ -69,10 +69,15 @@ export const getRecommendationsMultiple = (kbIds, limit = 10) => {
 // 根据描述生成模板
 export const buildTemplate = (description) => {
   return api.post('/template/build', null, {
-      params: {
-        request: description
-      }
-    });
+    params: {
+      request: description
+    }
+  });
+}
+
+// 批量解析知识库条目
+export const parseMaterials = (kbIds) => {
+  return api.post('/material/parse', kbIds)
 }
 
 export default api

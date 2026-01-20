@@ -277,9 +277,12 @@
       <button
         @click="nextStep"
         class="btn-primary"
-        :disabled="selectedDocuments.length === 0"
+        :disabled="selectedDocuments.length === 0 || isLoading"
       >
-        下一步 <i class="fa fa-arrow-right ml-2"></i>
+        <span v-if="isLoading && selectedDocuments.length > 0">
+          <i class="fa fa-spinner fa-spin mr-2"></i> 处理中...
+        </span>
+        <span v-else> 下一步 <i class="fa fa-arrow-right ml-2"></i> </span>
       </button>
     </div>
 
@@ -474,10 +477,16 @@ const deselectDocument = (documentId) => {
 };
 
 // 下一步
-const nextStep = () => {
+const nextStep = async () => {
   if (selectedDocuments.value.length > 0) {
-    router.push("/template-select");
-    store.nextStep();
+    try {
+      await store.parseSelectedDocuments();
+      router.push("/template-select");
+      store.nextStep();
+    } catch (error) {
+      console.error("Parsing failed", error);
+      // Stay on page to show error
+    }
   }
 };
 </script>

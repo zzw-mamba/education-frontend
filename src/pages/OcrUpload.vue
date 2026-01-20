@@ -233,7 +233,14 @@
                 </span>
               </div>
             </div>
-            <div class="flex items-center">
+            <div class="flex items-center gap-2">
+              <button
+                @click="openPreviewDialog(result)"
+                class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100 transition-colors"
+                title="放大预览"
+              >
+                <i class="fa fa-search-plus mr-1"></i> 放大预览
+              </button>
               <span
                 class="inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full bg-green-50 text-green-700 border border-green-100"
               >
@@ -242,14 +249,17 @@
             </div>
           </div>
           <div
-            class="markdown-shell border border-gray-200 bg-white rounded-xl p-4 mb-4 max-h-72 overflow-y-auto shadow-sm"
+            class="border border-gray-200 bg-white rounded-xl mb-4 max-h-72 overflow-y-auto shadow-sm"
           >
-            <div
+            <v-md-preview
               v-if="result.isMarkdown"
-              v-html="markdownToHtml(result.markdown || result.content)"
-              class="markdown-content text-secondary-700 text-sm"
-            ></div>
-            <p v-else class="text-secondary-700 text-sm whitespace-pre-wrap">
+              :text="result.markdown || result.content"
+              class="text-sm"
+            ></v-md-preview>
+            <p
+              v-else
+              class="text-secondary-700 text-sm whitespace-pre-wrap p-4"
+            >
               {{ result.content }}
             </p>
           </div>
@@ -272,6 +282,30 @@
         下一步 <i class="fa fa-arrow-right ml-2"></i>
       </button>
     </div>
+
+    <!-- 放大预览弹窗 -->
+    <el-dialog
+      v-model="previewDialogVisible"
+      :title="previewDialogTitle"
+      width="80%"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div
+        class="max-h-[70vh] overflow-y-auto border border-gray-200 rounded-lg bg-white"
+      >
+        <v-md-preview
+          v-if="currentPreview && currentPreview.isMarkdown"
+          :text="currentPreview.markdown || currentPreview.content"
+        ></v-md-preview>
+        <p
+          v-else-if="currentPreview"
+          class="text-secondary-700 whitespace-pre-wrap p-6"
+        >
+          {{ currentPreview.content }}
+        </p>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -279,21 +313,32 @@
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "../store";
-import { marked } from "marked";
+import { onMounted } from "vue";
+import VMdPreview from "@kangc/v-md-editor/lib/preview";
+import "@kangc/v-md-editor/lib/style/preview.css";
+import githubTheme from "@kangc/v-md-editor/lib/theme/github.js";
+import "@kangc/v-md-editor/lib/theme/style/github.css";
+import hljs from "highlight.js";
+import createKatexPlugin from "@kangc/v-md-editor/lib/plugins/katex/npm";
+
+VMdPreview.use(githubTheme, {
+  Hljs: hljs,
+});
+VMdPreview.use(createKatexPlugin());
 
 const router = useRouter();
 const store = useAppStore();
 
-// 配置marked选项
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
+// 预览弹窗相关状态
+const previewDialogVisible = ref(false);
+const currentPreview = ref(null);
+const previewDialogTitle = ref("");
 
-// Markdown转HTML函数
-const markdownToHtml = (markdown) => {
-  if (!markdown) return "";
-  return marked(markdown);
+// 打开预览弹窗
+const openPreviewDialog = (result) => {
+  currentPreview.value = result;
+  previewDialogTitle.value = `预览: ${result.fileName}`;
+  previewDialogVisible.value = true;
 };
 
 // 不在此步骤上传文件，使用上一步选择的数据源中的文件
@@ -311,7 +356,6 @@ const formatFileSize = (bytes) => {
 };
 
 // 当进入页面且有上传文件但尚未生成 ocrResults 时，触发识别
-import { onMounted } from "vue";
 onMounted(() => {
   if (store.uploadedFiles && store.uploadedFiles.length > 0) {
     // 如果尚未识别或识别结果与上传文件数量不匹配，则触发识别
@@ -332,133 +376,8 @@ const nextStep = () => {
 </script>
 
 <style scoped>
-/* Markdown 容器与样式 */
-.markdown-shell {
-  position: relative;
-  background: #ffffff;
-  border-radius: 14px;
-  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.05);
-  overflow: auto;
-}
-
-.markdown-shell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    135deg,
-    rgba(59, 130, 246, 0.06),
-    rgba(16, 185, 129, 0.06)
-  );
-  pointer-events: none;
-}
-
-.markdown-shell > * {
-  position: relative;
-  z-index: 1;
-}
-
-.markdown-shell::-webkit-scrollbar {
-  width: 10px;
-}
-
-.markdown-shell::-webkit-scrollbar-thumb {
-  background: linear-gradient(
-    180deg,
-    rgba(59, 130, 246, 0.6),
-    rgba(16, 185, 129, 0.6)
-  );
-  border-radius: 9999px;
-  border: 2px solid #f8fafc;
-}
-
-.markdown-shell::-webkit-scrollbar-track {
-  background: #f8fafc;
-  border-radius: 9999px;
-}
-
-.markdown-content {
-  color: #1f2937;
-  line-height: 1.75;
-  letter-spacing: 0.01em;
-  font-feature-settings: "liga" 1, "calt" 1;
-  text-rendering: optimizeLegibility;
-}
-
-.markdown-content :deep(h1) {
-  @apply text-xl font-bold text-secondary-900 mb-3 mt-4 border-b border-gray-200 pb-2;
-}
-
-.markdown-content :deep(h2) {
-  @apply text-lg font-semibold text-secondary-900 mb-2 mt-3 border-b border-gray-100 pb-1;
-}
-
-.markdown-content :deep(h3) {
-  @apply text-base font-semibold text-secondary-800 mb-1.5 mt-2;
-}
-
-.markdown-content :deep(p) {
-  @apply mb-3 text-secondary-700 leading-relaxed;
-  font-size: 0.97rem;
-}
-
-.markdown-content :deep(ul),
-.markdown-content :deep(ol) {
-  @apply mb-3 pl-5 text-secondary-700 space-y-1;
-}
-
-.markdown-content :deep(ul li) {
-  @apply list-disc;
-}
-
-.markdown-content :deep(ol li) {
-  @apply list-decimal;
-}
-
-.markdown-content :deep(blockquote) {
-  @apply pl-4 border-l-4 border-primary-400 italic text-secondary-700 bg-primary-50 py-2 pr-3 rounded-r-lg my-3;
-  font-style: normal;
-}
-
-.markdown-content :deep(code) {
-  @apply bg-slate-100 px-1.5 py-0.5 rounded text-[13px] font-mono text-rose-600 border border-slate-200;
-}
-
-.markdown-content :deep(pre) {
-  @apply bg-slate-900 text-slate-100 p-3 rounded-lg mb-3 overflow-x-auto text-[13px] border border-slate-800 shadow-inner;
-  line-height: 1.5;
-}
-
-.markdown-content :deep(pre code) {
-  @apply bg-transparent px-0 py-0 text-xs text-slate-100;
-}
-
-.markdown-content :deep(a) {
-  @apply text-primary-600 hover:text-primary-700 hover:underline font-semibold;
-}
-
-.markdown-content :deep(table) {
-  @apply w-full border-collapse mb-3 text-sm;
-}
-
-.markdown-content :deep(th),
-.markdown-content :deep(td) {
-  @apply border border-gray-200 px-3 py-2 align-top;
-}
-
-.markdown-content :deep(tbody tr:nth-child(even)) {
-  @apply bg-gray-50;
-}
-
-.markdown-content :deep(th) {
-  @apply bg-gray-100 font-semibold text-secondary-800;
-}
-
-.markdown-content :deep(img) {
-  @apply max-w-full rounded-lg shadow-sm border border-gray-200 my-3;
-}
-
-.markdown-content :deep(hr) {
-  @apply my-4 border-t border-gray-200;
+/* v-md-editor 预览容器的样式调整 */
+:deep(.v-md-editor-preview) {
+  padding: 16px;
 }
 </style>

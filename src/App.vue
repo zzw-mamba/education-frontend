@@ -1,6 +1,6 @@
 <template>
   <div
-    class="min-h-screen flex flex-col font-sans text-secondary-900 bg-gray-100/50 relative overflow-hidden"
+    class="min-h-screen flex flex-col font-sans text-secondary-900 bg-gradient-to-br from-slate-50 via-gray-100 to-gray-200 relative overflow-hidden"
   >
     <!-- 全局背景装饰 -->
     <div class="fixed inset-0 -z-10 pointer-events-none">
@@ -36,28 +36,28 @@
         <nav class="hidden md:flex items-center space-x-8">
           <router-link
             to="/"
-            class="text-sm font-medium text-secondary-600 hover:text-primary-600 transition-colors relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-primary-600 after:transition-all after:duration-300 hover:after:w-full"
+            class="text-base font-semibold text-secondary-600 hover:text-primary-600 transition-all duration-300 relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-1 after:bg-gradient-to-r after:from-primary-500 after:to-primary-600 after:transition-all after:duration-300 hover:after:w-full tracking-wide"
             active-class="text-primary-600 after:w-full"
           >
             首页
           </router-link>
           <router-link
             to="/data-source"
-            class="text-sm font-medium text-secondary-600 hover:text-primary-600 transition-colors relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-primary-600 after:transition-all after:duration-300 hover:after:w-full"
+            class="text-base font-semibold text-secondary-600 hover:text-primary-600 transition-all duration-300 relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-1 after:bg-gradient-to-r after:from-primary-500 after:to-primary-600 after:transition-all after:duration-300 hover:after:w-full tracking-wide"
             active-class="text-primary-600 after:w-full"
           >
             开始使用
           </router-link>
           <router-link
             to="/template-library"
-            class="text-sm font-medium text-secondary-600 hover:text-primary-600 transition-colors relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-primary-600 after:transition-all after:duration-300 hover:after:w-full"
+            class="text-base font-semibold text-secondary-600 hover:text-primary-600 transition-all duration-300 relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-1 after:bg-gradient-to-r after:from-primary-500 after:to-primary-600 after:transition-all after:duration-300 hover:after:w-full tracking-wide"
             active-class="text-primary-600 after:w-full"
           >
             模板库
           </router-link>
           <a
             href="#"
-            class="text-sm font-medium text-secondary-600 hover:text-primary-600 transition-colors relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5 after:bg-primary-600 after:transition-all after:duration-300 hover:after:w-full"
+            class="text-base font-semibold text-secondary-600 hover:text-primary-600 transition-all duration-300 relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-1 after:bg-gradient-to-r after:from-primary-500 after:to-primary-600 after:transition-all after:duration-300 hover:after:w-full tracking-wide"
             >帮助文档</a
           >
         </nav>
@@ -65,22 +65,26 @@
         <div class="flex items-center space-x-4">
           <div class="hidden md:flex items-center space-x-3">
             <router-link
+              v-if="!store.isAuthenticated"
               to="/login"
-              class="px-4 py-2 text-sm font-semibold text-secondary-700 hover:text-primary-600 transition-colors"
+              class="px-4 py-2 text-base font-semibold text-secondary-700 hover:text-primary-600 transition-all duration-300"
             >
               登录
             </router-link>
             <router-link
+              v-if="!store.isAuthenticated"
               to="/register"
-              class="px-4 py-2 text-sm font-semibold text-white bg-primary-600 rounded-lg shadow-md shadow-primary-500/30 hover:bg-primary-700 transition-colors"
+              class="px-4 py-2 text-base font-semibold text-white bg-primary-600 rounded-lg shadow-md shadow-primary-500/30 hover:bg-primary-700 transition-all duration-300"
             >
               注册
             </router-link>
             <router-link
+              v-if="store.isAuthenticated"
               to="/profile"
-              class="px-4 py-2 text-sm font-semibold text-secondary-700 border border-gray-200 rounded-lg hover:border-primary-200 hover:text-primary-600 transition-colors"
+              class="px-4 py-2 text-base font-semibold text-secondary-700 border-2 border-gray-300 rounded-lg hover:text-primary-600 hover:border-gray-400 hover:bg-gray-50 transition-colors duration-200 flex items-center space-x-2"
             >
-              个人中心
+              <i class="fa fa-user-circle"></i>
+              <span>个人中心</span>
             </router-link>
           </div>
           <button
@@ -136,11 +140,21 @@
         </div>
       </div>
     </footer>
+    <!-- 认证对话框 -->
+    <auth-dialog ref="authDialogRef" />
   </div>
 </template>
 
 <script setup>
-// 可以在这里添加全局的组件注册或其他逻辑
+import { useAppStore } from "./store";
+import { ref } from "vue";
+import AuthDialog from "./components/AuthDialog.vue";
+
+const store = useAppStore();
+const authDialogRef = ref(null);
+
+// 暴露给路由守卫使用
+globalThis.$authDialog = authDialogRef;
 </script>
 
 <style>

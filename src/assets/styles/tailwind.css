@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,7 +10,7 @@
   }
 
   body {
-    @apply font-sans text-secondary-800 bg-gray-50 antialiased;
+    @apply font-sans text-secondary-800 antialiased bg-gradient-to-br from-slate-50 via-gray-100 to-gray-200;
   }
 
   h1,

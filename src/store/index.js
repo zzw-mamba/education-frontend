@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import api, { buildTemplate } from '../services/api'
+import api, { buildTemplate, parseMaterials } from '../services/api'
 import * as authApi from '../services/auth'
 
 export const useAppStore = defineStore('app', {
@@ -16,6 +16,7 @@ export const useAppStore = defineStore('app', {
     successMessage: null,
 
     // 认证状态
+    isAuthenticated: false,
     authToken: localStorage.getItem('token') || '',
     currentUser: null,
 
@@ -27,6 +28,7 @@ export const useAppStore = defineStore('app', {
     initialDocuments: [],
     selectedDocuments: [],
     recommendedDocuments: [],
+    parsedMaterialsPath: null,
 
     // OCR状态
     uploadedFiles: [],
@@ -112,16 +114,33 @@ export const useAppStore = defineStore('app', {
       this.errorMessage = null
       try {
         const data = await authApi.loginUser({ username, password })
-        const token = data.access_token || data.token || data.jwt
-        if (token) {
-          localStorage.setItem('token', token)
-          this.authToken = token
+
+        // 检查响应状态
+        if (data.status !== 200) {
+          throw new Error(data.message || '登录失败')
         }
-        this.currentUser = data.user || null
+
+        // 检查 token 是否存在
+        if (!data.access_token) {
+          throw new Error('服务器未返回有效的访问令牌')
+        }
+
+        // 保存 access_token 到 localStorage
+        localStorage.setItem('token', data.access_token)
+        this.authToken = data.access_token
+
+        // 保存用户信息
+        if (data.user) {
+          this.currentUser = data
+        }
+
         this.successMessage = '登录成功'
+        this.isAuthenticated = true
+
         return data
       } catch (err) {
         this.errorMessage = err?.response?.data?.detail || err.message || '登录失败'
+        this.isAuthenticated = false
         throw err
       } finally {
         this.isLoading = false
@@ -148,6 +167,7 @@ export const useAppStore = defineStore('app', {
       try {
         const data = await authApi.fetchProfile()
         this.currentUser = data
+        console.log('Fetched user profile:', data)
         return data
       } catch (err) {
         if (err?.response?.status === 401) {
@@ -283,6 +303,26 @@ export const useAppStore = defineStore('app', {
         }, 800)
       } else {
         this.recommendedDocuments = []
+      }
+    },
+
+    // 批量解析文档
+    async parseSelectedDocuments() {
+      if (this.selectedDocuments.length === 0) return
+      this.isLoading = true
+      try {
+        const kbIds = this.selectedDocuments.map(doc => doc.id)
+        const response = await parseMaterials(kbIds)
+        this.parsedMaterialsPath = response.file_path
+        this.successMessage = '文档解析完成'
+        return response
+      } catch (error) {
+        console.error('Failed to parse documents:', error)
+        this.errorMessage = `文档解析失败: ${error.message || '未知错误'}`
+        // 如果解析失败，是否抛出错误阻止跳转？通常是的。
+        throw error
+      } finally {
+        this.isLoading = false
       }
     },
 
