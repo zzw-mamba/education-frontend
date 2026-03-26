@@ -88,15 +88,15 @@
     </div>
 
     <!-- 页面标题 -->
-    <h1 class="text-3xl font-bold mb-2">{{ summary.title }}</h1>
-    <p class="text-secondary-500 mb-8">
+    <h1 class="text-3xl font-bold mb-2">{{ summary ? summary.title : '未生成摘要' }}</h1>
+    <p class="text-secondary-500 mb-8" v-if="summary">
       生成时间: {{ formatDate(summary.date) }} | 来源: {{ sourceCount }}个{{
         dataSourceType === "knowledgeBase" ? "知识库文档" : "OCR识别文档"
       }}
     </p>
 
     <!-- 摘要内容 -->
-    <div class="card mb-8">
+    <div class="card mb-8" v-if="summary">
       <div class="prose max-w-none">
         <p
           v-for="(paragraph, index) in summary.content.split('\n\n')"

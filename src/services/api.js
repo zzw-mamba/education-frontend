@@ -80,4 +80,29 @@ export const parseMaterials = (kbIds) => {
   return api.post('/material/parse', kbIds)
 }
 
+// 获取用户模板列表
+export const getMyTemplates = () => {
+  return api.get('/template/my')
+}
+
+// 新增模板
+export const addTemplateApi = (templateData) => {
+  return api.put('/template/add', templateData)
+}
+
+// 存入基础知识库 (MySQL) 
+export const addKnowledgeEntry = (data) => {
+  return api.post('/knowledge/add', data)
+}
+
+// 同步写入图数据库并切片 (Neo4j/GraphRAG)
+export const syncGraphRag = (data) => {
+  return api.post('/api/graphrag/sync-from-mysql', data)
+}
+
+// 生成摘要
+export const generateSummaryApi = (templateId, data) => {
+  return api.post(`/template/${templateId}/summary`, data)
+}
+
 export default api

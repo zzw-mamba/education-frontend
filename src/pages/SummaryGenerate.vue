@@ -169,20 +169,24 @@ const selectedTemplateName = ref(
 );
 
 // 模拟生成进度
-const simulateProgress = () => {
+const simulateProgress = async () => {
+  // 因为这是真实请求大模型，会等待较长时间，所以我们不仅走假进度条
+  // 还要等待真正的 generateSummary 完成。
   const interval = setInterval(() => {
-    progress.value += Math.floor(Math.random() * 10) + 5;
-    if (progress.value >= 100) {
-      progress.value = 100;
-      clearInterval(interval);
-
-      // 模拟生成完成
-      setTimeout(() => {
-        store.generateSummary();
-        isGenerating.value = false;
-      }, 1000);
+    if (progress.value < 95) {
+      progress.value += Math.floor(Math.random() * 5) + 1;
     }
   }, 500);
+
+  try {
+    await store.generateSummary();
+    progress.value = 100;
+  } catch (error) {
+    console.error("生成出错：", error);
+  } finally {
+    clearInterval(interval);
+    isGenerating.value = false;
+  }
 };
 
 // 查看结果

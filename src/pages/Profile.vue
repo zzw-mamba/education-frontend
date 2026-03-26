@@ -136,10 +136,10 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div class="space-y-2">
                 <label class="text-sm font-semibold text-secondary-700"
-                  >姓名</label
+                  >用户名</label
                 >
                 <input
-                  v-model="profile.name"
+                  v-model="profile.username"
                   type="text"
                   class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all bg-white"
                 />
@@ -284,17 +284,36 @@
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <Transition name="toast-fade">
+      <div
+        v-if="successMessage"
+        class="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] w-[min(92vw,26rem)] pointer-events-none"
+        aria-live="polite"
+      >
+        <div
+          class="rounded-xl border border-emerald-200 bg-emerald-50/95 px-4 py-3 text-sm text-emerald-800 shadow-2xl backdrop-blur"
+        >
+          {{ successMessage }}
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from "vue";
+import { computed, reactive, ref, onBeforeUnmount, onMounted } from "vue";
 import { useAppStore } from "../store";
 
 const store = useAppStore();
 const errorMessage = ref("");
+const successMessage = ref("");
+const successTimer = ref(null);
 
 const profile = reactive({
-  name: store.user?.name ?? "",
+  username: store.user?.username ?? "",
+  name: store.user?.name ?? store.user?.username ?? "",
   email: store.user?.email ?? "",
   phone: store.user?.phone ?? "",
   location: store.user?.location ?? "",
@@ -317,7 +336,8 @@ const initials = computed(() =>
 const mergeProfile = (data) => {
   if (!data) return;
   Object.assign(profile, {
-    name: data.name || profile.name,
+    username: data.username || profile.username,
+    name: data.name || data.username || profile.name,
     email: data.email || profile.email,
     phone: data.phone || profile.phone,
     location: data.location || profile.location,
@@ -328,8 +348,20 @@ const mergeProfile = (data) => {
   });
 };
 
+const showSuccessToast = (message) => {
+  successMessage.value = message;
+  if (successTimer.value) {
+    clearTimeout(successTimer.value);
+  }
+  successTimer.value = setTimeout(() => {
+    successMessage.value = "";
+    successTimer.value = null;
+  }, 3000);
+};
+
 onMounted(async () => {
   errorMessage.value = "";
+  successMessage.value = "";
   try {
     const data = await store.fetchProfile();
     mergeProfile(data);
@@ -344,6 +376,7 @@ const handleSaveProfile = async () => {
   try {
     const data = await store.updateProfile({ ...profile });
     mergeProfile(data);
+    showSuccessToast("个人信息保存成功");
   } catch (err) {
     errorMessage.value =
       err?.response?.data?.detail || err.message || "更新个人信息失败";
@@ -366,4 +399,23 @@ const handleUpdatePassword = async () => {
       err?.response?.data?.detail || err.message || "更新密码失败";
   }
 };
+
+onBeforeUnmount(() => {
+  if (successTimer.value) {
+    clearTimeout(successTimer.value);
+  }
+});
 </script>
+
+<style scoped>
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-14px);
+}
+</style>
