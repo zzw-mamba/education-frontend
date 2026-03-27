@@ -90,6 +90,21 @@ export const addTemplateApi = (templateData) => {
   return api.put('/template/add', templateData)
 }
 
+// 更新模板
+export const updateTemplateApi = (templateId, templateData) => {
+  return api.put(`/template/${templateId}`, templateData)
+}
+
+// 删除模板
+export const deleteTemplateApi = (templateId) => {
+  return api.delete(`/template/${templateId}`)
+}
+
+// 复制模板
+export const duplicateTemplateApi = (templateId, payload = {}) => {
+  return api.post(`/template/${templateId}/duplicate`, payload)
+}
+
 // 存入基础知识库 (MySQL) 
 export const addKnowledgeEntry = (data) => {
   return api.post('/knowledge/add', data)

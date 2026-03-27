@@ -504,7 +504,8 @@ const handleReportChange = (event) => {
   }
 };
 
-const submitForm = () => {
+const submitForm = async () => {
+  reportError.value = "";
   const basePayload = {
     name: form.name,
     description: form.description,
@@ -516,8 +517,13 @@ const submitForm = () => {
   };
 
   if (isEditing.value && editingId.value) {
-    store.updateTemplate(editingId.value, basePayload);
-    showForm.value = false;
+    try {
+      await store.updateTemplate(editingId.value, basePayload);
+      showForm.value = false;
+    } catch (err) {
+      reportError.value =
+        err?.response?.data?.detail || err.message || "模板更新失败";
+    }
     return;
   }
 
@@ -541,19 +547,34 @@ const submitForm = () => {
     preview: derivedPreview,
   };
 
-  store.addTemplate(payload);
-  showForm.value = false;
-};
-
-const remove = (template) => {
-  const ok = window.confirm(`确定删除模板 “${template.name}” 吗？`);
-  if (ok) {
-    store.deleteTemplate(template.id);
+  try {
+    await store.addTemplate(payload);
+    showForm.value = false;
+  } catch (err) {
+    reportError.value =
+      err?.response?.data?.detail || err.message || "模板创建失败";
   }
 };
 
-const duplicate = (template) => {
-  store.duplicateTemplate(template.id);
+const remove = async (template) => {
+  const ok = window.confirm(`确定删除模板 “${template.name}” 吗？`);
+  if (ok) {
+    try {
+      await store.deleteTemplate(template.id);
+    } catch (err) {
+      reportError.value =
+        err?.response?.data?.detail || err.message || "模板删除失败";
+    }
+  }
+};
+
+const duplicate = async (template) => {
+  try {
+    await store.duplicateTemplate(template.id);
+  } catch (err) {
+    reportError.value =
+      err?.response?.data?.detail || err.message || "模板复制失败";
+  }
 };
 
 const useTemplate = (template) => {

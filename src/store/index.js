@@ -1,6 +1,26 @@
 import { defineStore } from 'pinia'
-import api, { buildTemplate, parseMaterials, searchKnowledge, getRecommendationsMultiple, getMyTemplates, addTemplateApi, generateSummaryApi, addKnowledgeEntry, syncGraphRag } from '../services/api'
+import api, { buildTemplate, parseMaterials, searchKnowledge, getRecommendationsMultiple, getMyTemplates, addTemplateApi, updateTemplateApi, deleteTemplateApi, duplicateTemplateApi, generateSummaryApi, addKnowledgeEntry, syncGraphRag } from '../services/api'
 import * as authApi from '../services/auth'
+
+const normalizeTagsInput = value => {
+  if (!value) return []
+  if (Array.isArray(value)) return value.filter(Boolean).map(t => String(t).trim()).filter(Boolean)
+  return String(value).split(',').map(t => t.trim()).filter(Boolean)
+}
+
+const normalizeTemplateFromApi = template => {
+  const tags = Array.isArray(template?.tags)
+    ? normalizeTagsInput(template.tags)
+    : normalizeTagsInput(template?.labels)
+
+  return {
+    ...template,
+    tags,
+    preview: template?.preview ?? template?.example ?? '',
+    updatedAt: template?.updatedAt ?? template?.updated_at ?? null,
+    createdAt: template?.createdAt ?? template?.created_at ?? null
+  }
+}
 
 export const useAppStore = defineStore('app', {
   getters: {
@@ -391,9 +411,9 @@ export const useAppStore = defineStore('app', {
       try {
         const response = await getMyTemplates();
         if (response && response.data) {
-          this.templates = response.data;
+          this.templates = response.data.map(normalizeTemplateFromApi);
         } else if (Array.isArray(response)) {
-          this.templates = response;
+          this.templates = response.map(normalizeTemplateFromApi);
         }
       } catch (err) {
         console.error('获取模板列表失败:', err);
@@ -402,18 +422,15 @@ export const useAppStore = defineStore('app', {
     async addTemplate(payload) {
       try {
         this.isLoading = true;
-        const normalizeTags = value => {
-          if (!value) return []
-          if (Array.isArray(value)) return value.filter(Boolean).map(t => String(t).trim()).filter(Boolean)
-          return String(value).split(',').map(t => t.trim()).filter(Boolean)
-        }
+        const tags = normalizeTagsInput(payload?.tags)
 
         const templateData = {
           name: (payload.name && payload.name.trim()) || `自定义模板 ${this.templates.length + 1}`,
           description: payload.description || '自定义模板',
           example: payload.preview || payload.prompt || '暂无预览',
           prompt: payload.prompt || '',
-          category: payload.category === '商业' ? 1 : (payload.category === '技术' ? 2 : 0)
+          category: payload.category === '商业' ? 1 : (payload.category === '技术' ? 2 : 0),
+          labels: tags
         }
 
         await addTemplateApi(templateData);
@@ -430,50 +447,82 @@ export const useAppStore = defineStore('app', {
         this.isLoading = false;
       }
     },
-    updateTemplate(id, updates) {
-      const now = new Date().toISOString()
-      const normalizeTags = value => {
-        if (!value) return []
-        if (Array.isArray(value)) return value.filter(Boolean).map(t => String(t).trim()).filter(Boolean)
-        return String(value)
-          .split(',')
-          .map(t => t.trim())
-          .filter(Boolean)
-      }
+    async updateTemplate(id, updates) {
+      try {
+        this.isLoading = true
+        const categoryValue = updates?.category
+        const category =
+          typeof categoryValue === 'number'
+            ? categoryValue
+            : categoryValue === '商业'
+              ? 1
+              : categoryValue === '技术'
+                ? 2
+                : 0
 
-      this.templates = this.templates.map(t => {
-        if (t.id !== id) return t
-        const nextTags = updates.tags === undefined ? t.tags : normalizeTags(updates.tags)
-        return {
-          ...t,
-          ...updates,
-          tags: nextTags,
-          updatedAt: updates.updatedAt || now
+        const requestPayload = {
+          name: updates?.name,
+          description: updates?.description,
+          prompt: updates?.prompt,
+          example: updates?.preview,
+          category,
+          labels: normalizeTagsInput(updates?.tags)
         }
-      })
 
-      if (this.selectedTemplate && this.selectedTemplate.id === id) {
-        const found = this.templates.find(t => t.id === id)
-        this.selectedTemplate = found || null
+        await updateTemplateApi(id, requestPayload)
+        await this.fetchTemplates()
+
+        const refreshed = this.templates.find(t => Number(t.id) === Number(id))
+        if (this.selectedTemplate && this.selectedTemplate.id === id) {
+          this.selectedTemplate = refreshed || null
+        }
+        this.successMessage = '模板更新成功'
+        return refreshed || null
+      } catch (err) {
+        this.errorMessage = err?.response?.data?.detail || err.message || '更新模板失败'
+        throw err
+      } finally {
+        this.isLoading = false
       }
     },
-    deleteTemplate(id) {
-      this.templates = this.templates.filter(t => t.id !== id)
-      if (this.selectedTemplate && this.selectedTemplate.id === id) {
-        this.selectedTemplate = null
+    async deleteTemplate(id) {
+      try {
+        this.isLoading = true
+        await deleteTemplateApi(id)
+        await this.fetchTemplates()
+        if (this.selectedTemplate && Number(this.selectedTemplate.id) === Number(id)) {
+          this.selectedTemplate = null
+        }
+        this.successMessage = '模板删除成功'
+      } catch (err) {
+        this.errorMessage = err?.response?.data?.detail || err.message || '删除模板失败'
+        throw err
+      } finally {
+        this.isLoading = false
       }
     },
-    duplicateTemplate(id) {
-      const target = this.templates.find(t => t.id === id)
-      if (!target) return null
-      const copy = {
-        ...target,
-        id: Date.now() + Math.floor(Math.random() * 1000),
-        name: `${target.name} 副本`,
-        updatedAt: new Date().toISOString()
+    async duplicateTemplate(id) {
+      try {
+        this.isLoading = true
+        const target = this.templates.find(t => Number(t.id) === Number(id))
+        const payload = {
+          name: target?.name ? `${target.name} 副本` : undefined
+        }
+        const response = await duplicateTemplateApi(id, payload)
+        await this.fetchTemplates()
+
+        const duplicatedId = response?.data?.id
+        const duplicatedTemplate = duplicatedId
+          ? this.templates.find(t => Number(t.id) === Number(duplicatedId))
+          : null
+        this.successMessage = '模板复制成功'
+        return duplicatedTemplate || null
+      } catch (err) {
+        this.errorMessage = err?.response?.data?.detail || err.message || '复制模板失败'
+        throw err
+      } finally {
+        this.isLoading = false
       }
-      this.templates = [copy, ...this.templates]
-      return copy
     },
     // 上传并解析模板报告（调用后端AI生成）
     async uploadTemplateReport(file) {
