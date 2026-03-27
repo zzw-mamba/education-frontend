@@ -120,4 +120,14 @@ export const generateSummaryApi = (templateId, data) => {
   return api.post(`/template/${templateId}/summary`, data)
 }
 
+// 创建摘要任务（异步）
+export const createSummaryJobApi = (templateId, data) => {
+  return api.post(`/template/${templateId}/summary-jobs`, data)
+}
+
+// 查询摘要任务状态
+export const getSummaryJobStatusApi = (jobId) => {
+  return api.get(`/template/summary-jobs/${jobId}`)
+}
+
 export default api

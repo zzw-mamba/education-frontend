@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import api, { buildTemplate, parseMaterials, searchKnowledge, getRecommendationsMultiple, getMyTemplates, addTemplateApi, updateTemplateApi, deleteTemplateApi, duplicateTemplateApi, generateSummaryApi, addKnowledgeEntry, syncGraphRag } from '../services/api'
+import api, { buildTemplate, parseMaterials, searchKnowledge, getRecommendationsMultiple, getMyTemplates, addTemplateApi, updateTemplateApi, deleteTemplateApi, duplicateTemplateApi, createSummaryJobApi, getSummaryJobStatusApi, addKnowledgeEntry, syncGraphRag } from '../services/api'
 import * as authApi from '../services/auth'
 
 const normalizeTagsInput = value => {
@@ -609,9 +609,11 @@ export const useAppStore = defineStore('app', {
     },
 
     // 摘要操作
-    async generateSummary() {
+    async generateSummary(options = {}) {
       this.isLoading = true
+      this.errorMessage = null
       try {
+        const onProgress = typeof options?.onProgress === 'function' ? options.onProgress : null
         const rawTemplateId = this.selectedTemplate ? this.selectedTemplate.id : (this.templates.length > 0 ? this.templates[0].id : null)
         const templateId = Number(rawTemplateId)
         if (!templateId) {
@@ -646,8 +648,53 @@ export const useAppStore = defineStore('app', {
           max_graph_papers: 3
         };
 
-        const response = await generateSummaryApi(templateId, requestData)
-        const resData = response?.data || response
+        const createResp = await createSummaryJobApi(templateId, requestData)
+        const jobId = createResp?.data?.job_id || createResp?.job_id
+        if (!jobId) {
+          throw new Error('后端未返回摘要任务ID')
+        }
+
+        if (onProgress) {
+          onProgress({
+            status: createResp?.data?.status || 'queued',
+            stage: createResp?.data?.stage || 'queued',
+            progress: createResp?.data?.progress ?? 0,
+            message: createResp?.data?.message || '任务已创建'
+          })
+        }
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+        let jobData = null
+        for (let i = 0; i < 240; i++) {
+          const statusResp = await getSummaryJobStatusApi(jobId)
+          jobData = statusResp?.data || statusResp
+
+          if (onProgress) {
+            onProgress({
+              status: jobData?.status,
+              stage: jobData?.stage,
+              progress: jobData?.progress,
+              message: jobData?.message
+            })
+          }
+
+          if (jobData?.status === 'completed') {
+            break
+          }
+
+          if (jobData?.status === 'failed') {
+            throw new Error(jobData?.error || '摘要生成任务失败')
+          }
+
+          await sleep(1200)
+        }
+
+        if (!jobData || jobData.status !== 'completed') {
+          throw new Error('摘要生成超时，请稍后重试')
+        }
+
+        const resultPayload = jobData?.result
+        const resData = resultPayload?.data || resultPayload
 
         if (resData) {
           const summary = {
@@ -663,12 +710,14 @@ export const useAppStore = defineStore('app', {
           this.generatedSummary = summary;
           this.summaryHistory.push(summary);
           this.successMessage = "摘要生成成功";
+          return summary
         } else {
           throw new Error("后端返回数据格式异常");
         }
       } catch (error) {
         this.errorMessage = `生成摘要失败: ${error.message}`;
         console.error('generateSummary failed:', error);
+        throw error
       } finally {
         this.isLoading = false;
       }

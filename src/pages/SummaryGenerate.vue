@@ -112,10 +112,11 @@
             ></div>
           </div>
           <p class="text-sm text-secondary-500 mt-2">{{ progress }}%</p>
+          <p class="text-sm text-secondary-500 mt-1">{{ progressMessage }}</p>
         </div>
       </div>
 
-      <div v-else class="mb-8">
+      <div v-else-if="!generationFailed" class="mb-8">
         <div
           class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-100 mb-6"
         >
@@ -135,6 +136,24 @@
           </button>
         </div>
       </div>
+
+      <div v-else class="mb-8">
+        <div
+          class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 mb-6"
+        >
+          <i class="fa fa-warning text-red-500 text-2xl"></i>
+        </div>
+        <h2 class="text-2xl font-semibold mb-4">摘要生成失败</h2>
+        <p class="text-secondary-600 max-w-2xl mx-auto mb-8">
+          {{ progressMessage || "生成过程中出现异常，请重试。" }}
+        </p>
+
+        <div class="flex flex-col sm:flex-row justify-center gap-4">
+          <button @click="regenerateSummary" class="btn-primary">
+            <i class="fa fa-refresh mr-2"></i> 重新生成
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -149,9 +168,11 @@ const store = useAppStore();
 
 // 生成状态
 const isGenerating = ref(true);
+const generationFailed = ref(false);
 
 // 生成进度
 const progress = ref(0);
+const progressMessage = ref("任务初始化中...");
 
 // 数据源类型
 const dataSourceType = ref(store.dataSourceType);
@@ -168,23 +189,29 @@ const selectedTemplateName = ref(
   store.selectedTemplate ? store.selectedTemplate.name : "自定义"
 );
 
-// 模拟生成进度
-const simulateProgress = async () => {
-  // 因为这是真实请求大模型，会等待较长时间，所以我们不仅走假进度条
-  // 还要等待真正的 generateSummary 完成。
-  const interval = setInterval(() => {
-    if (progress.value < 95) {
-      progress.value += Math.floor(Math.random() * 5) + 1;
-    }
-  }, 500);
-
+// 真实任务进度（后端轮询）
+const runSummaryGeneration = async () => {
+  generationFailed.value = false;
+  progressMessage.value = "任务创建中...";
   try {
-    await store.generateSummary();
+    await store.generateSummary({
+      onProgress: ({ progress: nextProgress, message }) => {
+        if (typeof nextProgress === "number" && Number.isFinite(nextProgress)) {
+          progress.value = Math.min(100, Math.max(0, Math.round(nextProgress)));
+        }
+        if (message) {
+          progressMessage.value = message;
+        }
+      },
+    });
+
     progress.value = 100;
+    progressMessage.value = "摘要生成完成";
   } catch (error) {
+    generationFailed.value = true;
+    progressMessage.value = store.errorMessage || "摘要生成失败，请重试";
     console.error("生成出错：", error);
   } finally {
-    clearInterval(interval);
     isGenerating.value = false;
   }
 };
@@ -198,13 +225,15 @@ const viewResult = () => {
 // 重新生成
 const regenerateSummary = () => {
   isGenerating.value = true;
+  generationFailed.value = false;
   progress.value = 0;
-  simulateProgress();
+  progressMessage.value = "任务创建中...";
+  runSummaryGeneration();
 };
 
 // 页面挂载时开始生成
 onMounted(() => {
-  simulateProgress();
+  runSummaryGeneration();
 });
 </script>
 
