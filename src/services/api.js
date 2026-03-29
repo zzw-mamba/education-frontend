@@ -52,6 +52,11 @@ export const getKnowledgeFile = (fileId) => {
   })
 }
 
+// 获取知识库文本内容（用于无文件路径时的预览回退）
+export const getKnowledgeContent = (kbId) => {
+  return api.get(`/knowledge/content/${kbId}`)
+}
+
 // 获取类似推荐文章
 export const getRecommendationsMultiple = (kbIds, limit = 10) => {
   // Use URLSearchParams to properly serialize array parameters (kb_ids=1&kb_ids=2...)
