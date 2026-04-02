@@ -120,6 +120,23 @@ export const syncGraphRag = (data) => {
   return api.post('/api/graphrag/sync-from-mysql', data)
 }
 
+// OCR 结果写入临时图谱作用域（不写 MySQL 知识库）
+export const upsertTempOcrGraph = (data) => {
+  return api.post('/api/graphrag/upsert-temp-ocr', data)
+}
+
+// 清理指定会话的临时 OCR 图数据
+export const cleanupTempOcrScope = (sessionScope) => {
+  return api.post('/api/graphrag/cleanup-temp-scope', {
+    session_scope: sessionScope
+  })
+}
+
+// 清理所有过期临时 OCR 图数据（兜底）
+export const cleanupExpiredTempOcr = () => {
+  return api.post('/api/graphrag/cleanup-temp-expired')
+}
+
 // 生成摘要
 export const generateSummaryApi = (templateId, data) => {
   return api.post(`/template/${templateId}/summary`, data)

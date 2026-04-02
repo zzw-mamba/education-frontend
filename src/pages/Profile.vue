@@ -1,11 +1,5 @@
 <template>
   <div class="container-custom py-16 space-y-10">
-    <div
-      v-if="errorMessage"
-      class="p-4 rounded-2xl bg-red-50 border border-red-100 text-red-600 text-sm"
-    >
-      {{ errorMessage }}
-    </div>
     <div class="flex flex-col lg:flex-row gap-8">
       <div class="lg:w-1/3 space-y-6">
         <div
@@ -256,11 +250,11 @@
             </div>
             <div class="md:col-span-3 flex items-center justify-between pt-1">
               <div class="text-xs text-secondary-500">
-                建议包含大小写、数字与符号，长度不少于 12 位。
+                建议包含大小写、数字与符号，长度不少于 8 位。
               </div>
               <button
                 type="submit"
-                class="px-4 py-2.5 rounded-xl bg-secondary-900 text-white font-semibold hover:bg-secondary-800 transition-colors"
+                class="px-4 py-2.5 rounded-xl bg-secondary-900 text-white font-semibold hover:bg-secondary-800 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
               >
                 更新密码
               </button>
@@ -299,6 +293,19 @@
         </div>
       </div>
     </Transition>
+    <Transition name="toast-fade">
+      <div
+        v-if="errorMessage"
+        class="fixed top-20 left-1/2 -translate-x-1/2 z-[9999] w-[min(92vw,26rem)] pointer-events-none"
+        aria-live="assertive"
+      >
+        <div
+          class="rounded-xl border border-red-200 bg-red-50/95 px-4 py-3 text-sm text-red-700 shadow-2xl backdrop-blur"
+        >
+          {{ errorMessage }}
+        </div>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -310,6 +317,7 @@ const store = useAppStore();
 const errorMessage = ref("");
 const successMessage = ref("");
 const successTimer = ref(null);
+const errorTimer = ref(null);
 
 const profile = reactive({
   username: store.user?.username ?? "",
@@ -359,6 +367,17 @@ const showSuccessToast = (message) => {
   }, 3000);
 };
 
+const showErrorToast = (message) => {
+  errorMessage.value = message;
+  if (errorTimer.value) {
+    clearTimeout(errorTimer.value);
+  }
+  errorTimer.value = setTimeout(() => {
+    errorMessage.value = "";
+    errorTimer.value = null;
+  }, 3500);
+};
+
 onMounted(async () => {
   errorMessage.value = "";
   successMessage.value = "";
@@ -366,8 +385,7 @@ onMounted(async () => {
     const data = await store.fetchProfile();
     mergeProfile(data);
   } catch (err) {
-    errorMessage.value =
-      err?.response?.data?.detail || err.message || "获取个人信息失败";
+    showErrorToast(err?.response?.data?.detail || err.message || "获取个人信息失败");
   }
 });
 
@@ -378,13 +396,15 @@ const handleSaveProfile = async () => {
     mergeProfile(data);
     showSuccessToast("个人信息保存成功");
   } catch (err) {
-    errorMessage.value =
-      err?.response?.data?.detail || err.message || "更新个人信息失败";
+    showErrorToast(err?.response?.data?.detail || err.message || "更新个人信息失败");
   }
 };
 
 const handleUpdatePassword = async () => {
-  if (!security.next || security.next !== security.confirm) return;
+  if (!security.next || security.next !== security.confirm) {
+    showErrorToast("两次输入的新密码不一致");
+    return;
+  }
   errorMessage.value = "";
   try {
     await store.changePassword({
@@ -394,15 +414,18 @@ const handleUpdatePassword = async () => {
     security.current = "";
     security.next = "";
     security.confirm = "";
+    showSuccessToast("密码已更新");
   } catch (err) {
-    errorMessage.value =
-      err?.response?.data?.detail || err.message || "更新密码失败";
+    showErrorToast(err?.response?.data?.detail || err.message || "更新密码失败");
   }
 };
 
 onBeforeUnmount(() => {
   if (successTimer.value) {
     clearTimeout(successTimer.value);
+  }
+  if (errorTimer.value) {
+    clearTimeout(errorTimer.value);
   }
 });
 </script>

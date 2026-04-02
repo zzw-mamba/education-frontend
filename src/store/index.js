@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import api, { buildTemplate, parseMaterials, searchKnowledge, getRecommendationsMultiple, getMyTemplates, addTemplateApi, updateTemplateApi, deleteTemplateApi, duplicateTemplateApi, createSummaryJobApi, getSummaryJobStatusApi, addKnowledgeEntry, syncGraphRag } from '../services/api'
+import api, { buildTemplate, parseMaterials, searchKnowledge, getRecommendationsMultiple, getMyTemplates, addTemplateApi, updateTemplateApi, deleteTemplateApi, duplicateTemplateApi, createSummaryJobApi, getSummaryJobStatusApi, upsertTempOcrGraph, cleanupTempOcrScope, cleanupExpiredTempOcr } from '../services/api'
 import * as authApi from '../services/auth'
+import { getTemplateCategoryCode, getTemplateCategoryLabel } from '../constants/templateCategories'
 
 const normalizeTagsInput = value => {
   if (!value) return []
@@ -15,6 +16,7 @@ const normalizeTemplateFromApi = template => {
 
   return {
     ...template,
+    categoryLabel: getTemplateCategoryLabel(template?.category),
     tags,
     preview: template?.preview ?? template?.example ?? '',
     updatedAt: template?.updatedAt ?? template?.updated_at ?? null,
@@ -53,6 +55,7 @@ export const useAppStore = defineStore('app', {
     // OCR状态
     uploadedFiles: [],
     ocrResults: [],
+    ocrSessionScope: null,
 
     // 模板状态
     templates: [],
@@ -309,6 +312,8 @@ export const useAppStore = defineStore('app', {
     async processOcr() {
       this.isLoading = true
       const results = []
+      const batchScope = `ocr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      this.ocrSessionScope = batchScope
 
       try {
         // 处理每个上传的文件
@@ -327,34 +332,33 @@ export const useAppStore = defineStore('app', {
 
               console.log('OCR响应：', response)
 
-              // 将内容存入 MySQL 知识库
+              // 将 OCR 结果写入临时图谱作用域，不污染正式知识库
               let paperId = null;
+              let sessionScope = batchScope;
               try {
-                this.successMessage = `正在将 ${file.name} 存入知识库并构建图谱...这可能需要较长时间。`;
-                const addResponse = await addKnowledgeEntry({
+                this.successMessage = `正在将 ${file.name} 写入临时图谱并构建检索索引...`;
+                const tempGraphResponse = await upsertTempOcrGraph({
                   title: file.name,
                   content: response,
-                  category: "OCR本地文档"
-                });
-                paperId = addResponse.id;
-
-                // 同步到 Neo4j 构建图数据库
-                await syncGraphRag({
-                  paper_ids: [paperId],
-                  limit: 1,
+                  session_scope: batchScope,
+                  ttl_hours: 24,
                   chunk_size: 500,
                   chunk_overlap: 50,
                   auto_extract_entities: true
                 });
-                console.log(`[GraphRAG] ${file.name} 入库图谱构建完成。ID: ${paperId}`)
+                paperId = tempGraphResponse.temp_paper_id;
+                sessionScope = tempGraphResponse.session_scope || batchScope;
+
+                console.log(`[GraphRAG] ${file.name} 临时图谱构建完成。scope=${sessionScope}, paper_id=${paperId}`)
               } catch (dbError) {
-                console.error('OCR 入库或同步图数据库过程失败:', dbError);
+                console.error('OCR 临时图谱写入失败:', dbError);
               }
 
               // 解析后端返回的markdown内容
               results.push({
                 id: Date.now() + Math.floor(Math.random() * 1000),
                 paper_id: paperId,
+                session_scope: sessionScope,
                 fileName: file.name,
                 fileSize: file.size,
                 pages: response.pages || 1,
@@ -398,6 +402,38 @@ export const useAppStore = defineStore('app', {
         console.error('OCR处理出错：', error)
       }
     },
+
+    async cleanupTemporaryOcrData() {
+      const scope = (this.ocrSessionScope || this.ocrResults.find(r => r.session_scope)?.session_scope || '').trim()
+      if (!scope) {
+        this.uploadedFiles = []
+        this.ocrResults = []
+        this.ocrSessionScope = null
+        return { cleaned: false, reason: 'no_scope' }
+      }
+
+      try {
+        await cleanupTempOcrScope(scope)
+      } catch (error) {
+        console.error('清理临时 OCR 会话失败:', error)
+      }
+
+      try {
+        await cleanupExpiredTempOcr()
+      } catch (error) {
+        console.warn('清理过期临时 OCR 数据失败:', error)
+      }
+
+      this.uploadedFiles = []
+      this.ocrResults = []
+      this.ocrSessionScope = null
+      if (this.dataSourceType === 'ocr') {
+        this.dataSourceType = 'knowledgeBase'
+      }
+
+      return { cleaned: true, session_scope: scope }
+    },
+
     // 模板操作
     selectTemplate(template) {
       this.selectedTemplate = template
@@ -429,7 +465,7 @@ export const useAppStore = defineStore('app', {
           description: payload.description || '自定义模板',
           example: payload.preview || payload.prompt || '暂无预览',
           prompt: payload.prompt || '',
-          category: payload.category === '商业' ? 1 : (payload.category === '技术' ? 2 : 0),
+          category: getTemplateCategoryCode(payload.category),
           labels: tags
         }
 
@@ -451,14 +487,7 @@ export const useAppStore = defineStore('app', {
       try {
         this.isLoading = true
         const categoryValue = updates?.category
-        const category =
-          typeof categoryValue === 'number'
-            ? categoryValue
-            : categoryValue === '商业'
-              ? 1
-              : categoryValue === '技术'
-                ? 2
-                : 0
+        const category = getTemplateCategoryCode(categoryValue)
 
         const requestPayload = {
           name: updates?.name,
@@ -543,20 +572,55 @@ export const useAppStore = defineStore('app', {
           // 2. 调用后端 API 生成模板结构
           // 注意：这里把文件内容作为 description 传给后端
           const response = await buildTemplate(text)
-          // buildTemplate 返回结构可能是对象，摘要接口要求 query_text/prompt 为字符串
-          const generatedContent = response?.content ?? ''
-          const generatedPrompt =
-            typeof generatedContent === 'string'
-              ? generatedContent
-              : JSON.stringify(generatedContent, null, 2)
+          // 统一兼容 buildTemplate 的几种返回形态：{data} / {content} / 直接对象
+          const generatedContent = response?.data ?? response?.content ?? response ?? {}
 
-          const templateName = file.name.replace(/\.[^.]+$/, '') + ' (AI生成)'
+          let generatedObject = {}
+          if (typeof generatedContent === 'string') {
+            const raw = generatedContent.trim()
+            try {
+              generatedObject = JSON.parse(raw)
+            } catch {
+              const start = raw.indexOf('{')
+              const end = raw.lastIndexOf('}')
+              if (start !== -1 && end !== -1 && start < end) {
+                try {
+                  generatedObject = JSON.parse(raw.slice(start, end + 1))
+                } catch {
+                  generatedObject = { prompt: raw }
+                }
+              } else {
+                generatedObject = { prompt: raw }
+              }
+            }
+          } else if (generatedContent && typeof generatedContent === 'object') {
+            generatedObject = generatedContent
+          }
+
+          // 与手动创建保持一致：prompt 永远是纯文本，不保存 JSON 串
+          const generatedPrompt = String(generatedObject?.prompt || '').trim()
+          const templateName = (generatedObject?.name && String(generatedObject.name).trim())
+            || (file.name.replace(/\.[^.]+$/, '') + ' (AI生成)')
+
+          const rawCategory = Number(generatedObject?.category)
+          const normalizedCategory = Number.isInteger(rawCategory) ? rawCategory : 0
+          const generatedDescription = String(
+            generatedObject?.description || '基于上传报告由 AI 自动生成的摘要模板'
+          ).trim()
+
+          const generatedLabels = Array.isArray(generatedObject?.labels)
+            ? generatedObject.labels
+            : Array.isArray(generatedObject?.tags)
+              ? generatedObject.tags
+              : []
+
           const templateData = {
             name: templateName,
-            description: '基于上传报告由 AI 自动生成的摘要模板',
-            example: generatedPrompt || '暂无预览',
+            description: generatedDescription,
+            example: String(generatedObject?.example || generatedPrompt || '暂无预览'),
             prompt: generatedPrompt || '',
-            category: 0
+            category: normalizedCategory,
+            labels: generatedLabels
           }
 
           const addResult = await addTemplateApi(templateData)
@@ -624,15 +688,19 @@ export const useAppStore = defineStore('app', {
         }
 
         let paperIds = [];
+        let sessionScope = null;
+        let includeGlobal = false;
         if (this.dataSourceType === 'knowledgeBase' && this.selectedDocuments.length > 0) {
           paperIds = this.selectedDocuments
             .map(d => Number(d.id))
             .filter(id => Number.isInteger(id));
         } else if (this.dataSourceType === 'ocr' && this.ocrResults.length > 0) {
-          // 利用我们在 OCR 阶段存入并返回的 paper_id
+          // OCR 使用临时图谱作用域检索，同时联合全知识库进行补充。
           paperIds = this.ocrResults
             .map(r => Number(r.paper_id))
             .filter(id => Number.isInteger(id));
+          sessionScope = this.ocrSessionScope || this.ocrResults.find(r => r.session_scope)?.session_scope || null;
+          includeGlobal = true;
         }
 
         const queryTextRaw = this.customPrompt || this.summaryTopic || '请生成核心内容的摘要报告'
@@ -641,6 +709,8 @@ export const useAppStore = defineStore('app', {
         const requestData = {
           query_text: queryText,
           paper_ids: paperIds.length > 0 ? paperIds : null,
+          session_scope: sessionScope,
+          include_global: includeGlobal,
           top_k: 8,
           focus_direction: "核心观点与主要结论",
           snippets_per_entity: 2,

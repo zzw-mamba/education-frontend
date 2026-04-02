@@ -104,7 +104,7 @@
               <span
                 class="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700"
               >
-                {{ template.category || "未分类" }}
+                {{ displayCategory(template) }}
               </span>
               <span class="text-xs text-secondary-400">{{
                 formatDate(template.updatedAt)
@@ -129,9 +129,9 @@
         <div
           class="mt-3 rounded-xl border border-gray-100 bg-gray-50 p-3 text-sm text-secondary-700 shadow-inner"
         >
-          <p class="text-xs font-medium text-secondary-500">模板预览</p>
+          <p class="text-xs font-medium text-secondary-500">预览</p>
           <p class="mt-1 line-clamp-3 whitespace-pre-line">
-            {{ template.preview || template.prompt || "暂无预览" }}
+            {{ template.prompt || "暂无预览" }}
           </p>
         </div>
 
@@ -183,9 +183,11 @@
     <transition name="fade">
       <div
         v-if="showForm"
-        class="fixed inset-0 z-40 flex items-center justify-center bg-black/30 px-4"
+        class="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/30 px-4 py-6 md:items-center"
       >
-        <div class="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
+        <div
+          class="w-full max-w-3xl max-h-[75vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"
+        >
           <div class="flex items-center justify-between">
             <div>
               <p class="text-xs uppercase tracking-wide text-secondary-500">
@@ -205,6 +207,35 @@
 
           <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div class="space-y-4">
+              <div v-if="!isEditing" class="space-y-2">
+                <label class="text-sm font-medium text-secondary-800">创建方式</label>
+                <div class="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    class="rounded-xl border px-3 py-2 text-sm transition"
+                    :class="
+                      createMode === 'manual'
+                        ? 'border-primary-300 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 bg-white text-secondary-700 hover:border-primary-200'
+                    "
+                    @click="createMode = 'manual'"
+                  >
+                    手工创建
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-xl border px-3 py-2 text-sm transition"
+                    :class="
+                      createMode === 'ai'
+                        ? 'border-primary-300 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 bg-white text-secondary-700 hover:border-primary-200'
+                    "
+                    @click="createMode = 'ai'"
+                  >
+                    AI 生成
+                  </button>
+                </div>
+              </div>
               <div>
                 <label class="text-sm font-medium text-secondary-800"
                   >名称</label
@@ -212,6 +243,7 @@
                 <input
                   v-model="form.name"
                   type="text"
+                  :disabled="isAiGeneratingLocked"
                   class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
                   placeholder="例如：产品发布会摘要"
                 />
@@ -220,12 +252,19 @@
                 <label class="text-sm font-medium text-secondary-800"
                   >分类</label
                 >
-                <input
+                <select
                   v-model="form.category"
-                  type="text"
+                  :disabled="isAiGeneratingLocked"
                   class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
-                  placeholder="例如：商业 / 技术 / 学术"
-                />
+                >
+                  <option
+                    v-for="opt in TEMPLATE_CATEGORY_OPTIONS"
+                    :key="opt.value"
+                    :value="opt.label"
+                  >
+                    {{ opt.label }}
+                  </option>
+                </select>
               </div>
               <div>
                 <label class="text-sm font-medium text-secondary-800"
@@ -234,6 +273,7 @@
                 <input
                   v-model="form.tagsInput"
                   type="text"
+                  :disabled="isAiGeneratingLocked"
                   class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
                   placeholder="以逗号分隔，例如：营销,新品,中文"
                 />
@@ -245,11 +285,15 @@
                 <textarea
                   v-model="form.description"
                   rows="3"
+                  :disabled="isAiGeneratingLocked"
                   class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
                   placeholder="简要说明模板的使用场景和输出要求"
                 ></textarea>
               </div>
-              <div v-if="!isEditing" class="space-y-2">
+            </div>
+
+            <div class="space-y-4">
+              <div v-if="!isEditing && createMode === 'ai'" class="space-y-2">
                 <label class="text-sm font-medium text-secondary-800">
                   上传模板样例
                 </label>
@@ -269,66 +313,63 @@
                     @change="handleReportChange"
                   />
                 </label>
-                <p class="text-xs text-secondary-500">
-                  文本文件将自动解析生成提示词；非文本文件会创建占位模板，后续可在模板库继续完善。
-                </p>
+                <p class="text-xs text-secondary-500">上传后将调用 AI 解析并生成模板。</p>
                 <div
                   v-if="reportError"
                   class="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600"
                 >
                   {{ reportError }}
                 </div>
-                <div
-                  v-if="reportRawContent"
-                  class="rounded-lg border border-gray-100 bg-gray-50 p-3 text-xs text-secondary-700"
-                >
-                  <p class="mb-1 font-medium text-secondary-600">
-                    解析预览（前400字）
-                  </p>
-                  <pre class="max-h-40 overflow-auto whitespace-pre-wrap">{{
-                    reportRawContent.slice(0, 400)
-                  }}</pre>
-                </div>
               </div>
-            </div>
-
-            <div class="space-y-4">
-              <div v-if="isEditing">
-                <label class="text-sm font-medium text-secondary-800"
-                  >提示词 (Prompt)</label
-                >
-                <textarea
-                  v-model="form.prompt"
-                  rows="6"
-                  class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
-                  placeholder="编写用于生成摘要的完整提示词"
-                ></textarea>
-              </div>
-              <div>
+              <div v-if="isEditing || (!isEditing && createMode === 'manual')">
                 <label class="text-sm font-medium text-secondary-800"
                   >预览</label
                 >
-                <div
-                  class="mt-1 min-h-[120px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 shadow-inner"
+                <textarea
+                  v-model="form.prompt"
+                  rows="19"
+                  class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  placeholder="编写用于生成摘要的完整模板"
+                ></textarea>
+              </div>
+              <!-- <div v-if="!isEditing && createMode === 'manual'">
+                <label class="text-sm font-medium text-secondary-800"
+                  >预览（可选）</label
                 >
-                  <p
-                    v-if="form.preview"
-                    class="whitespace-pre-wrap leading-relaxed text-secondary-800"
-                  >
-                    {{ form.preview }}
-                  </p>
-                  <p v-else class="text-secondary-400">
-                    上传样例后展示解析预览（最多400字）。后端接入后可在此显示模板结构预览。
-                  </p>
-                </div>
+                <textarea
+                  v-model="form.preview"
+                  rows="8"
+                  class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  placeholder="可填写示例输出或说明，不填时默认截取提示词前400字"
+                ></textarea>
+              </div> -->
+              <div v-if="!isEditing && createMode === 'ai'">
+                <label class="text-sm font-medium text-secondary-800"
+                  >预览</label
+                >
+                <textarea
+                  v-model="form.preview"
+                  rows="19"
+                  :disabled="isAiGeneratingLocked"
+                  class="mt-1 w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-800 focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  :placeholder="isGeneratingTemplate ? 'AI 正在生成模板，请稍候...' : '上传样例后展示解析预览（可编辑）'"
+                ></textarea>
               </div>
             </div>
           </div>
 
           <div class="mt-6 flex items-center justify-end gap-3">
-            <button class="btn-secondary" @click="closeForm">取消</button>
-            <button class="btn-primary" @click="submitForm">
-              {{ isEditing ? "保存修改" : "创建模板" }}
+            <button class="btn-secondary" @click="closeForm" :disabled="isGeneratingTemplate">取消</button>
+            <button
+              class="btn-primary"
+              @click="submitForm"
+              :disabled="isGeneratingTemplate || (!isEditing && createMode === 'ai' && !generatedTemplateId)"
+            >
+              {{
+                isGeneratingTemplate
+                  ? "AI生成中..."
+                  : (isEditing ? "保存修改" : (createMode === 'ai' ? "完成" : "创建模板"))
+              }}
             </button>
           </div>
         </div>
@@ -341,6 +382,10 @@
 import { computed, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "../store";
+import {
+  TEMPLATE_CATEGORY_OPTIONS,
+  getTemplateCategoryLabel,
+} from "../constants/templateCategories";
 
 const store = useAppStore();
 const router = useRouter();
@@ -351,9 +396,13 @@ const sortKey = ref("recent");
 const showForm = ref(false);
 const isEditing = ref(false);
 const editingId = ref(null);
+const applicableDescription = ref("");
 const reportFile = ref(null);
 const reportRawContent = ref("");
 const reportError = ref("");
+const createMode = ref("manual");
+const isGeneratingTemplate = ref(false);
+const generatedTemplateId = ref(null);
 const form = reactive({
   name: "",
   description: "",
@@ -364,10 +413,13 @@ const form = reactive({
 });
 
 const templates = computed(() => store.templates || []);
+const isAiGeneratingLocked = computed(
+  () => !isEditing.value && createMode.value === "ai" && isGeneratingTemplate.value
+);
 
 const categories = computed(() => {
   const set = new Set(
-    (templates.value || []).map((t) => t.category || "未分类")
+    (templates.value || []).map((t) => getTemplateCategoryLabel(t.category))
   );
   return Array.from(set);
 });
@@ -395,7 +447,7 @@ const filteredTemplates = computed(() => {
 
   if (categoryFilter.value) {
     list = list.filter(
-      (t) => (t.category || "未分类") === categoryFilter.value
+      (t) => getTemplateCategoryLabel(t.category) === categoryFilter.value
     );
   }
 
@@ -420,7 +472,11 @@ const filteredTemplates = computed(() => {
   } else if (sortKey.value === "name") {
     list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
   } else if (sortKey.value === "category") {
-    list.sort((a, b) => (a.category || "").localeCompare(b.category || ""));
+    list.sort((a, b) =>
+      getTemplateCategoryLabel(a.category).localeCompare(
+        getTemplateCategoryLabel(b.category)
+      )
+    );
   }
 
   return list;
@@ -437,9 +493,13 @@ const resetForm = () => {
   form.tagsInput = "";
   form.preview = "";
   form.prompt = "";
+  applicableDescription.value = "";
   reportFile.value = null;
   reportRawContent.value = "";
   reportError.value = "";
+  createMode.value = "manual";
+  isGeneratingTemplate.value = false;
+  generatedTemplateId.value = null;
 };
 
 const openCreate = () => {
@@ -452,12 +512,16 @@ const openCreate = () => {
 const openEdit = (template) => {
   isEditing.value = true;
   editingId.value = template.id;
+  const parsedPreview = parsePromptPayload(template.preview);
+  const parsedPreviewDescription = parsedPreview?.description || "";
+
   form.name = template.name || "";
   form.description = template.description || "";
-  form.category = template.category || "通用";
+  form.category = getTemplateCategoryLabel(template.category);
   form.tagsInput = (template.tags || []).join(",");
-  form.preview = template.preview || template.prompt || "";
+  form.preview = template.preview || "";
   form.prompt = template.prompt || "";
+  applicableDescription.value = parsedPreviewDescription;
   reportFile.value = null;
   reportRawContent.value = "";
   reportError.value = "";
@@ -467,6 +531,61 @@ const openEdit = (template) => {
 const closeForm = () => {
   showForm.value = false;
 };
+
+const parsePromptPayload = (value) => {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+
+  const text = String(value).trim();
+  if (!text || !text.startsWith("{")) return null;
+
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const extractedPromptView = computed(() => {
+  const parsed = parsePromptPayload(form.preview);
+
+  if (parsed) {
+    return {
+      description: parsed.description || "",
+      prompt: form.prompt || "",
+    };
+  }
+
+  return {
+    description: applicableDescription.value || "",
+    prompt: form.prompt || "",
+  };
+});
+
+const descriptionModel = computed({
+  get() {
+    return applicableDescription.value || extractedPromptView.value.description || "";
+  },
+  set(value) {
+    const next = value || "";
+    applicableDescription.value = next;
+
+    const parsed = parsePromptPayload(form.preview);
+    if (parsed) {
+      form.preview = JSON.stringify(
+        {
+          ...parsed,
+          description: next,
+        },
+        null,
+        2
+      );
+    }
+  },
+});
 
 const parseTags = (value) => {
   if (!value) return [];
@@ -481,37 +600,64 @@ const handleReportChange = (event) => {
   reportError.value = "";
   reportRawContent.value = "";
   reportFile.value = f || null;
+  generatedTemplateId.value = null;
   if (!f) return;
 
-  const isText =
-    /text|json|markdown|plain/.test(f.type) || /\.(txt|md|json)$/i.test(f.name);
+  if (!isEditing.value && createMode.value === "ai") {
+    void generateTemplateFromUpload(f);
+  }
+};
 
-  if (isText) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      reportRawContent.value = String(reader.result || "");
-      form.preview = form.preview || reportRawContent.value.slice(0, 400);
-    };
-    reader.onerror = () => {
-      reportError.value = "读取文件失败，请重试";
-      reportRawContent.value = "";
-    };
-    reader.readAsText(f);
-  } else {
-    // 非文本文件，仍允许上传，但无法直接生成预览
-    form.preview =
-      form.preview || "（无法自动解析二进制文件，请后续补充提示词）";
+const generateTemplateFromUpload = async (file) => {
+  reportError.value = "";
+  isGeneratingTemplate.value = true;
+  generatedTemplateId.value = null;
+  form.preview = "";
+  form.prompt = "";
+
+  try {
+    const generated = await store.uploadTemplateReport(file);
+    if (!generated) {
+      throw new Error("AI 未返回模板结果");
+    }
+
+    generatedTemplateId.value = generated.id || null;
+    form.name = generated.name || form.name;
+    form.description = generated.description || form.description;
+    form.category = getTemplateCategoryLabel(generated.category ?? form.category);
+    form.tagsInput = (generated.tags || []).join(",");
+    form.prompt = generated.prompt || "";
+    form.preview = generated.preview || generated.prompt || "";
+  } catch (err) {
+    reportError.value =
+      err?.response?.data?.detail || err.message || "AI 生成模板失败";
+  } finally {
+    isGeneratingTemplate.value = false;
   }
 };
 
 const submitForm = async () => {
+  if (isGeneratingTemplate.value) return;
   reportError.value = "";
+
+  const parsedPreview = parsePromptPayload(form.preview);
+  const finalPreview = parsedPreview
+    ? JSON.stringify(
+        {
+          ...parsedPreview,
+          description: applicableDescription.value || "",
+        },
+        null,
+        2
+      )
+    : form.preview;
+
   const basePayload = {
     name: form.name,
     description: form.description,
     category: form.category,
     tags: parseTags(form.tagsInput),
-    preview: form.preview,
+    preview: finalPreview,
     prompt: form.prompt,
     updatedAt: new Date().toISOString(),
   };
@@ -527,33 +673,58 @@ const submitForm = async () => {
     return;
   }
 
-  // 新建模板：必须上传样例文件，由样例生成提示词
+  if (createMode.value === "manual") {
+    const manualPrompt = String(form.prompt || "").trim();
+    if (!manualPrompt) {
+      reportError.value = "请填写提示词";
+      return;
+    }
+
+    const payload = {
+      ...basePayload,
+      prompt: manualPrompt,
+      preview: form.preview || manualPrompt.slice(0, 400),
+    };
+
+    try {
+      await store.addTemplate(payload);
+      showForm.value = false;
+    } catch (err) {
+      reportError.value =
+        err?.response?.data?.detail || err.message || "模板创建失败";
+    }
+    return;
+  }
+
   if (!reportFile.value) {
     reportError.value = "请先上传模板样例文件";
     return;
   }
 
-  const hasText = Boolean(reportRawContent.value.trim());
-  const derivedPrompt = hasText
-    ? reportRawContent.value
-    : `请参考文件 ${reportFile.value.name} 的内容生成摘要。`;
-  const derivedPreview = hasText
-    ? reportRawContent.value.slice(0, 400)
-    : form.preview || "（无法自动生成预览，后续可补充）";
-
-  const payload = {
-    ...basePayload,
-    prompt: derivedPrompt,
-    preview: derivedPreview,
-  };
+  if (!generatedTemplateId.value) {
+    reportError.value = "请先上传样例并等待 AI 生成完成";
+    return;
+  }
 
   try {
-    await store.addTemplate(payload);
-    showForm.value = false;
+    await store.updateTemplate(generatedTemplateId.value, {
+      ...basePayload,
+      preview: finalPreview || form.prompt || "",
+      prompt: form.preview || form.prompt || "",
+    });
   } catch (err) {
     reportError.value =
-      err?.response?.data?.detail || err.message || "模板创建失败";
+      err?.response?.data?.detail || err.message || "模板更新失败";
+    return;
   }
+
+  const latest = (store.templates || []).find(
+    (t) => Number(t.id) === Number(generatedTemplateId.value)
+  );
+  if (latest) {
+    store.selectTemplate(latest);
+  }
+  showForm.value = false;
 };
 
 const remove = async (template) => {
@@ -600,6 +771,8 @@ const formatDate = (value) => {
     "0"
   )}-${String(d.getDate()).padStart(2, "0")}`;
 };
+
+const displayCategory = (template) => getTemplateCategoryLabel(template?.category);
 </script>
 
 <style scoped>
@@ -615,6 +788,7 @@ const formatDate = (value) => {
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -622,6 +796,7 @@ const formatDate = (value) => {
 .line-clamp-3 {
   display: -webkit-box;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
