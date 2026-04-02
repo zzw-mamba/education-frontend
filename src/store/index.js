@@ -1,6 +1,28 @@
 import { defineStore } from 'pinia'
-import api, { buildTemplate, parseMaterials } from '../services/api'
+import api, { buildTemplate, parseMaterials, searchKnowledge, getRecommendationsMultiple, getMyTemplates, addTemplateApi, updateTemplateApi, deleteTemplateApi, duplicateTemplateApi, createSummaryJobApi, getSummaryJobStatusApi, upsertTempOcrGraph, cleanupTempOcrScope, cleanupExpiredTempOcr } from '../services/api'
 import * as authApi from '../services/auth'
+import { getTemplateCategoryCode, getTemplateCategoryLabel } from '../constants/templateCategories'
+
+const normalizeTagsInput = value => {
+  if (!value) return []
+  if (Array.isArray(value)) return value.filter(Boolean).map(t => String(t).trim()).filter(Boolean)
+  return String(value).split(',').map(t => t.trim()).filter(Boolean)
+}
+
+const normalizeTemplateFromApi = template => {
+  const tags = Array.isArray(template?.tags)
+    ? normalizeTagsInput(template.tags)
+    : normalizeTagsInput(template?.labels)
+
+  return {
+    ...template,
+    categoryLabel: getTemplateCategoryLabel(template?.category),
+    tags,
+    preview: template?.preview ?? template?.example ?? '',
+    updatedAt: template?.updatedAt ?? template?.updated_at ?? null,
+    createdAt: template?.createdAt ?? template?.created_at ?? null
+  }
+}
 
 export const useAppStore = defineStore('app', {
   getters: {
@@ -33,60 +55,10 @@ export const useAppStore = defineStore('app', {
     // OCR状态
     uploadedFiles: [],
     ocrResults: [],
+    ocrSessionScope: null,
 
     // 模板状态
-    templates: [
-      {
-        id: 1,
-        name: '标准摘要',
-        description: '适用于大多数文档的标准摘要格式',
-        preview: '这是一个标准摘要模板的预览...',
-        prompt: '请总结以下文档的核心内容，包括主要观点、关键数据和结论。保持语言简洁明了，结构清晰。',
-        category: '通用',
-        tags: ['通用', '简洁'],
-        updatedAt: '2025-01-04T09:00:00Z'
-      },
-      {
-        id: 2,
-        name: '技术报告',
-        description: '适用于技术文档和研究报告的专业摘要格式',
-        preview: '这是一个技术报告模板的预览...',
-        prompt: '请以技术报告格式总结以下文档，包括技术背景、方法、结果和应用前景。使用专业术语，保持客观中立。',
-        category: '技术',
-        tags: ['技术', '研究'],
-        updatedAt: '2025-01-06T10:30:00Z'
-      },
-      {
-        id: 3,
-        name: ' executive summary',
-        description: '适用于商业文档和管理报告的高管摘要格式',
-        preview: '这是一个executive summary模板的预览...',
-        prompt: '请以executive summary格式总结以下文档，突出商业价值、战略意义和决策建议。语言简洁有力，适合高管阅读。',
-        category: '商业',
-        tags: ['商业', '高管'],
-        updatedAt: '2025-01-08T14:15:00Z'
-      },
-      {
-        id: 4,
-        name: '研究摘要',
-        description: '适用于学术研究和论文的摘要格式',
-        preview: '这是一个研究摘要模板的预览...',
-        prompt: '请以学术研究摘要格式总结以下文档，包括研究背景、目的、方法、结果和结论。使用学术语言，引用关键数据。',
-        category: '学术',
-        tags: ['学术', '论文'],
-        updatedAt: '2025-01-09T08:45:00Z'
-      },
-      {
-        id: 5,
-        name: '问题解决方案',
-        description: '适用于问题分析和解决方案文档的摘要格式',
-        preview: '这是一个问题解决方案模板的预览...',
-        prompt: '请以问题解决方案格式总结以下文档，包括问题描述、分析、解决方案和实施建议。结构清晰，重点突出。',
-        category: '方案',
-        tags: ['方案', '分析'],
-        updatedAt: '2025-01-10T12:00:00Z'
-      }
-    ],
+    templates: [],
     selectedTemplate: null,
     customPrompt: '',
     summaryTopic: '', // 用户指定的摘要主题
@@ -102,6 +74,7 @@ export const useAppStore = defineStore('app', {
         this.authToken = saved
         try {
           await this.fetchProfile()
+          await this.fetchTemplates()
         } catch (err) {
           if (err?.response?.status === 401) {
             this.logout()
@@ -131,11 +104,13 @@ export const useAppStore = defineStore('app', {
 
         // 保存用户信息
         if (data.user) {
-          this.currentUser = data
+          this.currentUser = data.user
         }
 
         this.successMessage = '登录成功'
         this.isAuthenticated = true
+
+        await this.fetchTemplates()
 
         return data
       } catch (err) {
@@ -183,10 +158,25 @@ export const useAppStore = defineStore('app', {
       this.isLoading = true
       this.errorMessage = null
       try {
-        const data = await authApi.updateProfile(payload)
-        this.currentUser = data
+        if (!this.currentUser?.id) {
+          throw new Error('未获取到用户ID，请重新登录后再试')
+        }
+
+        const nextUsername = String(payload?.username ?? payload?.name ?? this.currentUser.username ?? '').trim()
+        const nextEmail = payload?.email ?? this.currentUser.email ?? null
+
+        const requestPayload = {
+          username: nextUsername,
+          email: nextEmail
+        }
+
+        const data = await authApi.updateProfile(requestPayload)
+        this.currentUser = {
+          ...this.currentUser,
+          ...data
+        }
         this.successMessage = '个人信息已更新'
-        return data
+        return this.currentUser
       } catch (err) {
         this.errorMessage = err?.response?.data?.detail || err.message || '更新个人信息失败'
         throw err
@@ -198,7 +188,20 @@ export const useAppStore = defineStore('app', {
       this.isLoading = true
       this.errorMessage = null
       try {
-        const data = await authApi.changePassword(payload)
+        if (!this.currentUser?.id) {
+          throw new Error('未获取到用户ID，请重新登录后再试')
+        }
+
+        const oldPassword = payload?.old_password || payload?.current_password
+        const newPassword = payload?.new_password
+
+        const requestPayload = {
+          user_id: this.currentUser.id,
+          old_password: oldPassword,
+          new_password: newPassword
+        }
+
+        const data = await authApi.changePassword(requestPayload)
         this.successMessage = '密码已更新'
         return data
       } catch (err) {
@@ -232,39 +235,17 @@ export const useAppStore = defineStore('app', {
     },
 
     // 知识库操作
-    searchDocuments(keywords) {
+    async searchDocuments(keywords) {
       this.searchKeywords = keywords
-      // 模拟API请求
       this.isLoading = true
-      setTimeout(() => {
-        this.initialDocuments = [
-          {
-            id: 1,
-            title: '人工智能在医疗领域的应用',
-            summary: '本文探讨了人工智能技术在医疗诊断、药物研发和患者护理等方面的应用...',
-            source: '医疗科技期刊',
-            date: '2023-05-15',
-            matchScore: 95
-          },
-          {
-            id: 2,
-            title: '机器学习算法比较研究',
-            summary: '本研究对当前主流的机器学习算法进行了全面比较，包括性能、适用场景和计算复杂度...',
-            source: '计算机科学进展',
-            date: '2023-08-22',
-            matchScore: 88
-          },
-          {
-            id: 3,
-            title: '自然语言处理最新进展',
-            summary: '本文综述了自然语言处理领域的最新研究进展，重点介绍了大型语言模型和多模态技术...',
-            source: '人工智能研究',
-            date: '2023-10-05',
-            matchScore: 82
-          }
-        ]
+      try {
+        const results = await searchKnowledge(keywords)
+        this.initialDocuments = results || []
+      } catch (error) {
+        console.error('搜索知识库失败:', error)
+      } finally {
         this.isLoading = false
-      }, 1000)
+      }
     },
     selectDocument(document) {
       if (!this.selectedDocuments.some(doc => doc.id === document.id)) {
@@ -274,33 +255,19 @@ export const useAppStore = defineStore('app', {
     deselectDocument(documentId) {
       this.selectedDocuments = this.selectedDocuments.filter(doc => doc.id !== documentId)
     },
-    getRecommendations() {
-      // 模拟API请求
+    async getRecommendations() {
       if (this.selectedDocuments.length > 0) {
         this.isLoading = true
-        setTimeout(() => {
-          this.recommendedDocuments = [
-            {
-              id: 4,
-              title: '深度学习在医疗影像分析中的应用',
-              summary: '本文探讨了深度学习技术在医疗影像分析中的具体应用案例和效果评估...',
-              source: '医学影像杂志',
-              date: '2023-07-18',
-              matchScore: 92,
-              reason: '与"人工智能在医疗领域的应用"高度相关'
-            },
-            {
-              id: 5,
-              title: 'AI伦理与隐私保护',
-              summary: '本文讨论了人工智能应用中的伦理问题和隐私保护挑战，提出了相应的解决方案...',
-              source: '科技与伦理',
-              date: '2023-09-30',
-              matchScore: 78,
-              reason: '补充"人工智能在医疗领域的应用"中的伦理考量'
-            }
-          ]
+        try {
+          const kbIds = this.selectedDocuments.map(doc => doc.id)
+          const results = await getRecommendationsMultiple(kbIds)
+          this.recommendedDocuments = results || []
+        } catch (error) {
+          console.error('获取推荐失败:', error)
+          this.recommendedDocuments = []
+        } finally {
           this.isLoading = false
-        }, 800)
+        }
       } else {
         this.recommendedDocuments = []
       }
@@ -345,6 +312,8 @@ export const useAppStore = defineStore('app', {
     async processOcr() {
       this.isLoading = true
       const results = []
+      const batchScope = `ocr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      this.ocrSessionScope = batchScope
 
       try {
         // 处理每个上传的文件
@@ -362,9 +331,34 @@ export const useAppStore = defineStore('app', {
               })
 
               console.log('OCR响应：', response)
+
+              // 将 OCR 结果写入临时图谱作用域，不污染正式知识库
+              let paperId = null;
+              let sessionScope = batchScope;
+              try {
+                this.successMessage = `正在将 ${file.name} 写入临时图谱并构建检索索引...`;
+                const tempGraphResponse = await upsertTempOcrGraph({
+                  title: file.name,
+                  content: response,
+                  session_scope: batchScope,
+                  ttl_hours: 24,
+                  chunk_size: 500,
+                  chunk_overlap: 50,
+                  auto_extract_entities: true
+                });
+                paperId = tempGraphResponse.temp_paper_id;
+                sessionScope = tempGraphResponse.session_scope || batchScope;
+
+                console.log(`[GraphRAG] ${file.name} 临时图谱构建完成。scope=${sessionScope}, paper_id=${paperId}`)
+              } catch (dbError) {
+                console.error('OCR 临时图谱写入失败:', dbError);
+              }
+
               // 解析后端返回的markdown内容
               results.push({
                 id: Date.now() + Math.floor(Math.random() * 1000),
+                paper_id: paperId,
+                session_scope: sessionScope,
                 fileName: file.name,
                 fileSize: file.size,
                 pages: response.pages || 1,
@@ -408,6 +402,38 @@ export const useAppStore = defineStore('app', {
         console.error('OCR处理出错：', error)
       }
     },
+
+    async cleanupTemporaryOcrData() {
+      const scope = (this.ocrSessionScope || this.ocrResults.find(r => r.session_scope)?.session_scope || '').trim()
+      if (!scope) {
+        this.uploadedFiles = []
+        this.ocrResults = []
+        this.ocrSessionScope = null
+        return { cleaned: false, reason: 'no_scope' }
+      }
+
+      try {
+        await cleanupTempOcrScope(scope)
+      } catch (error) {
+        console.error('清理临时 OCR 会话失败:', error)
+      }
+
+      try {
+        await cleanupExpiredTempOcr()
+      } catch (error) {
+        console.warn('清理过期临时 OCR 数据失败:', error)
+      }
+
+      this.uploadedFiles = []
+      this.ocrResults = []
+      this.ocrSessionScope = null
+      if (this.dataSourceType === 'ocr') {
+        this.dataSourceType = 'knowledgeBase'
+      }
+
+      return { cleaned: true, session_scope: scope }
+    },
+
     // 模板操作
     selectTemplate(template) {
       this.selectedTemplate = template
@@ -417,76 +443,115 @@ export const useAppStore = defineStore('app', {
     },
 
     // 模板管理
-    addTemplate(payload) {
-      const now = new Date().toISOString()
-      const normalizeTags = value => {
-        if (!value) return []
-        if (Array.isArray(value)) return value.filter(Boolean).map(t => String(t).trim()).filter(Boolean)
-        return String(value)
-          .split(',')
-          .map(t => t.trim())
-          .filter(Boolean)
-      }
-
-      const template = {
-        id: Date.now() + Math.floor(Math.random() * 1000),
-        name: (payload.name && payload.name.trim()) || `自定义模板 ${this.templates.length + 1}`,
-        description: payload.description || '自定义模板',
-        preview: payload.preview || payload.prompt || '暂无预览',
-        prompt: payload.prompt || '',
-        category: payload.category || '通用',
-        tags: normalizeTags(payload.tags),
-        updatedAt: payload.updatedAt || now
-      }
-
-      this.templates = [template, ...this.templates]
-      this.selectedTemplate = template
-      return template
-    },
-    updateTemplate(id, updates) {
-      const now = new Date().toISOString()
-      const normalizeTags = value => {
-        if (!value) return []
-        if (Array.isArray(value)) return value.filter(Boolean).map(t => String(t).trim()).filter(Boolean)
-        return String(value)
-          .split(',')
-          .map(t => t.trim())
-          .filter(Boolean)
-      }
-
-      this.templates = this.templates.map(t => {
-        if (t.id !== id) return t
-        const nextTags = updates.tags === undefined ? t.tags : normalizeTags(updates.tags)
-        return {
-          ...t,
-          ...updates,
-          tags: nextTags,
-          updatedAt: updates.updatedAt || now
+    async fetchTemplates() {
+      try {
+        const response = await getMyTemplates();
+        if (response && response.data) {
+          this.templates = response.data.map(normalizeTemplateFromApi);
+        } else if (Array.isArray(response)) {
+          this.templates = response.map(normalizeTemplateFromApi);
         }
-      })
+      } catch (err) {
+        console.error('获取模板列表失败:', err);
+      }
+    },
+    async addTemplate(payload) {
+      try {
+        this.isLoading = true;
+        const tags = normalizeTagsInput(payload?.tags)
 
-      if (this.selectedTemplate && this.selectedTemplate.id === id) {
-        const found = this.templates.find(t => t.id === id)
-        this.selectedTemplate = found || null
+        const templateData = {
+          name: (payload.name && payload.name.trim()) || `自定义模板 ${this.templates.length + 1}`,
+          description: payload.description || '自定义模板',
+          example: payload.preview || payload.prompt || '暂无预览',
+          prompt: payload.prompt || '',
+          category: getTemplateCategoryCode(payload.category),
+          labels: tags
+        }
+
+        await addTemplateApi(templateData);
+        await this.fetchTemplates(); // 重新拉取以获取正确的ID
+
+        if (this.templates.length > 0) {
+          this.selectedTemplate = this.templates[0];
+        }
+        return this.selectedTemplate;
+      } catch (err) {
+        console.error('添加模板失败', err);
+        throw err;
+      } finally {
+        this.isLoading = false;
       }
     },
-    deleteTemplate(id) {
-      this.templates = this.templates.filter(t => t.id !== id)
-      if (this.selectedTemplate && this.selectedTemplate.id === id) {
-        this.selectedTemplate = null
+    async updateTemplate(id, updates) {
+      try {
+        this.isLoading = true
+        const categoryValue = updates?.category
+        const category = getTemplateCategoryCode(categoryValue)
+
+        const requestPayload = {
+          name: updates?.name,
+          description: updates?.description,
+          prompt: updates?.prompt,
+          example: updates?.preview,
+          category,
+          labels: normalizeTagsInput(updates?.tags)
+        }
+
+        await updateTemplateApi(id, requestPayload)
+        await this.fetchTemplates()
+
+        const refreshed = this.templates.find(t => Number(t.id) === Number(id))
+        if (this.selectedTemplate && this.selectedTemplate.id === id) {
+          this.selectedTemplate = refreshed || null
+        }
+        this.successMessage = '模板更新成功'
+        return refreshed || null
+      } catch (err) {
+        this.errorMessage = err?.response?.data?.detail || err.message || '更新模板失败'
+        throw err
+      } finally {
+        this.isLoading = false
       }
     },
-    duplicateTemplate(id) {
-      const target = this.templates.find(t => t.id === id)
-      if (!target) return null
-      const copy = {
-        ...target,
-        id: Date.now() + Math.floor(Math.random() * 1000),
-        name: `${target.name} 副本`,
-        updatedAt: new Date().toISOString()
+    async deleteTemplate(id) {
+      try {
+        this.isLoading = true
+        await deleteTemplateApi(id)
+        await this.fetchTemplates()
+        if (this.selectedTemplate && Number(this.selectedTemplate.id) === Number(id)) {
+          this.selectedTemplate = null
+        }
+        this.successMessage = '模板删除成功'
+      } catch (err) {
+        this.errorMessage = err?.response?.data?.detail || err.message || '删除模板失败'
+        throw err
+      } finally {
+        this.isLoading = false
       }
-      this.templates = [copy, ...this.templates]
-      return copy
+    },
+    async duplicateTemplate(id) {
+      try {
+        this.isLoading = true
+        const target = this.templates.find(t => Number(t.id) === Number(id))
+        const payload = {
+          name: target?.name ? `${target.name} 副本` : undefined
+        }
+        const response = await duplicateTemplateApi(id, payload)
+        await this.fetchTemplates()
+
+        const duplicatedId = response?.data?.id
+        const duplicatedTemplate = duplicatedId
+          ? this.templates.find(t => Number(t.id) === Number(duplicatedId))
+          : null
+        this.successMessage = '模板复制成功'
+        return duplicatedTemplate || null
+      } catch (err) {
+        this.errorMessage = err?.response?.data?.detail || err.message || '复制模板失败'
+        throw err
+      } finally {
+        this.isLoading = false
+      }
     },
     // 上传并解析模板报告（调用后端AI生成）
     async uploadTemplateReport(file) {
@@ -507,16 +572,74 @@ export const useAppStore = defineStore('app', {
           // 2. 调用后端 API 生成模板结构
           // 注意：这里把文件内容作为 description 传给后端
           const response = await buildTemplate(text)
-          // 根据 Python 代码，返回的是 JSON 对象，包含 content 字段
-          // axios 拦截器通常已经把 response.data 返回了，所以 response 就是 data
-          const generatedContent = response.content || ''
+          // 统一兼容 buildTemplate 的几种返回形态：{data} / {content} / 直接对象
+          const generatedContent = response?.data ?? response?.content ?? response ?? {}
 
-          template = {
-            id: Date.now() + Math.floor(Math.random() * 1000),
-            name: file.name.replace(/\.[^.]+$/, '') + ' (AI生成)',
-            description: '基于上传报告由 AI 自动生成的摘要模板',
-            preview: generatedContent,
-            prompt: generatedContent // 将生成的模板结构直接作为 prompt
+          let generatedObject = {}
+          if (typeof generatedContent === 'string') {
+            const raw = generatedContent.trim()
+            try {
+              generatedObject = JSON.parse(raw)
+            } catch {
+              const start = raw.indexOf('{')
+              const end = raw.lastIndexOf('}')
+              if (start !== -1 && end !== -1 && start < end) {
+                try {
+                  generatedObject = JSON.parse(raw.slice(start, end + 1))
+                } catch {
+                  generatedObject = { prompt: raw }
+                }
+              } else {
+                generatedObject = { prompt: raw }
+              }
+            }
+          } else if (generatedContent && typeof generatedContent === 'object') {
+            generatedObject = generatedContent
+          }
+
+          // 与手动创建保持一致：prompt 永远是纯文本，不保存 JSON 串
+          const generatedPrompt = String(generatedObject?.prompt || '').trim()
+          const templateName = (generatedObject?.name && String(generatedObject.name).trim())
+            || (file.name.replace(/\.[^.]+$/, '') + ' (AI生成)')
+
+          const rawCategory = Number(generatedObject?.category)
+          const normalizedCategory = Number.isInteger(rawCategory) ? rawCategory : 0
+          const generatedDescription = String(
+            generatedObject?.description || '基于上传报告由 AI 自动生成的摘要模板'
+          ).trim()
+
+          const generatedLabels = Array.isArray(generatedObject?.labels)
+            ? generatedObject.labels
+            : Array.isArray(generatedObject?.tags)
+              ? generatedObject.tags
+              : []
+
+          const templateData = {
+            name: templateName,
+            description: generatedDescription,
+            example: String(generatedObject?.example || generatedPrompt || '暂无预览'),
+            prompt: generatedPrompt || '',
+            category: normalizedCategory,
+            labels: generatedLabels
+          }
+
+          const addResult = await addTemplateApi(templateData)
+          const savedTemplateId = addResult?.data?.template_id
+          await this.fetchTemplates()
+
+          if (savedTemplateId) {
+            const savedTemplate = this.templates.find(t => Number(t.id) === Number(savedTemplateId))
+            if (savedTemplate) {
+              this.selectedTemplate = savedTemplate
+              template = {
+                ...savedTemplate,
+                preview: savedTemplate.example || generatedPrompt
+              }
+            }
+          }
+
+          if (!template) {
+            throw new Error('模板保存失败，请重试')
           }
         } else {
           // 非文本文件：暂时无法读取内容传给 LLM
@@ -531,10 +654,11 @@ export const useAppStore = defineStore('app', {
           this.errorMessage = '注意：非文本文件无法通过 AI 生成模板结构'
         }
 
-        // 将新模板插入到列表顶部
-        this.templates = [template, ...this.templates]
-        // 自动选择新模板
-        this.selectedTemplate = template
+        if (!isText) {
+          // 非文本场景仍使用本地占位模板
+          this.templates = [template, ...this.templates]
+          this.selectedTemplate = template
+        }
         if (isText) {
           this.successMessage = '模板报告解析并生成成功'
         }
@@ -549,69 +673,158 @@ export const useAppStore = defineStore('app', {
     },
 
     // 摘要操作
-    generateSummary() {
-      // 模拟API请求
+    async generateSummary(options = {}) {
       this.isLoading = true
-      setTimeout(() => {
-        const summary = {
-          id: Date.now(),
-          title: this.selectedTemplate ? this.selectedTemplate.name : '自定义摘要',
-          content: `这是基于您选择的${this.selectedTemplate ? this.selectedTemplate.name : '自定义'}模板生成的摘要内容。\n\n${this.dataSourceType === 'knowledgeBase' ?
-            '从知识库文档中提取的核心信息包括：\n- 人工智能技术在多个领域的应用前景\n- 机器学习算法的性能比较\n- 自然语言处理的最新进展\n\n' :
-            '从OCR识别文档中提取的核心信息包括：\n- 文档中的主要观点和数据\n- 关键结论和建议\n- 相关背景信息\n\n'}${this.customPrompt ? `根据您的自定义要求：${this.customPrompt}` : ''}`,
-          date: new Date().toISOString(),
-          templateId: this.selectedTemplate ? this.selectedTemplate.id : null,
-          prompt: this.selectedTemplate ? this.selectedTemplate.prompt + (this.customPrompt ? `\n\n额外要求：${this.customPrompt}` : '') : this.customPrompt,
-          sourceCount: this.dataSourceType === 'knowledgeBase' ? this.selectedDocuments.length : this.ocrResults.length
+      this.errorMessage = null
+      try {
+        const onProgress = typeof options?.onProgress === 'function' ? options.onProgress : null
+        const rawTemplateId = this.selectedTemplate ? this.selectedTemplate.id : (this.templates.length > 0 ? this.templates[0].id : null)
+        const templateId = Number(rawTemplateId)
+        if (!templateId) {
+          throw new Error("请先选择一个生成模板");
         }
-        this.generatedSummary = summary
-        this.summaryHistory.push(summary)
-        this.isLoading = false
-      }, 2500)
+        if (!Number.isInteger(templateId)) {
+          throw new Error('模板 ID 无效，请重新选择模板')
+        }
+
+        let paperIds = [];
+        let sessionScope = null;
+        let includeGlobal = false;
+        if (this.dataSourceType === 'knowledgeBase' && this.selectedDocuments.length > 0) {
+          paperIds = this.selectedDocuments
+            .map(d => Number(d.id))
+            .filter(id => Number.isInteger(id));
+        } else if (this.dataSourceType === 'ocr' && this.ocrResults.length > 0) {
+          // OCR 使用临时图谱作用域检索，同时联合全知识库进行补充。
+          paperIds = this.ocrResults
+            .map(r => Number(r.paper_id))
+            .filter(id => Number.isInteger(id));
+          sessionScope = this.ocrSessionScope || this.ocrResults.find(r => r.session_scope)?.session_scope || null;
+          includeGlobal = true;
+        }
+
+        const queryTextRaw = this.customPrompt || this.summaryTopic || '请生成核心内容的摘要报告'
+        const queryText = typeof queryTextRaw === 'string' ? queryTextRaw : JSON.stringify(queryTextRaw)
+
+        const requestData = {
+          query_text: queryText,
+          paper_ids: paperIds.length > 0 ? paperIds : null,
+          session_scope: sessionScope,
+          include_global: includeGlobal,
+          top_k: 8,
+          focus_direction: "核心观点与主要结论",
+          snippets_per_entity: 2,
+          neighbor_limit: 4,
+          max_graph_papers: 3
+        };
+
+        const createResp = await createSummaryJobApi(templateId, requestData)
+        const jobId = createResp?.data?.job_id || createResp?.job_id
+        if (!jobId) {
+          throw new Error('后端未返回摘要任务ID')
+        }
+
+        if (onProgress) {
+          onProgress({
+            status: createResp?.data?.status || 'queued',
+            stage: createResp?.data?.stage || 'queued',
+            progress: createResp?.data?.progress ?? 0,
+            message: createResp?.data?.message || '任务已创建'
+          })
+        }
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+        let jobData = null
+        for (let i = 0; i < 240; i++) {
+          const statusResp = await getSummaryJobStatusApi(jobId)
+          jobData = statusResp?.data || statusResp
+
+          if (onProgress) {
+            onProgress({
+              status: jobData?.status,
+              stage: jobData?.stage,
+              progress: jobData?.progress,
+              message: jobData?.message
+            })
+          }
+
+          if (jobData?.status === 'completed') {
+            break
+          }
+
+          if (jobData?.status === 'failed') {
+            throw new Error(jobData?.error || '摘要生成任务失败')
+          }
+
+          await sleep(1200)
+        }
+
+        if (!jobData || jobData.status !== 'completed') {
+          throw new Error('摘要生成超时，请稍后重试')
+        }
+
+        const resultPayload = jobData?.result
+        const resData = resultPayload?.data || resultPayload
+
+        if (resData) {
+          const summary = {
+            id: resData.result_id || Date.now(),
+            title: this.selectedTemplate ? this.selectedTemplate.name : '自定义摘要',
+            content: resData.summary || resData.summary_markdown,
+            date: new Date().toISOString(),
+            templateId: templateId,
+            prompt: requestData.query_text,
+            sourceCount: this.dataSourceType === 'knowledgeBase' ? this.selectedDocuments.length : this.ocrResults.length,
+            files: resData.files // 存储后端返回的文件路径信息
+          };
+          this.generatedSummary = summary;
+          this.summaryHistory.push(summary);
+          this.successMessage = "摘要生成成功";
+          return summary
+        } else {
+          throw new Error("后端返回数据格式异常");
+        }
+      } catch (error) {
+        this.errorMessage = `生成摘要失败: ${error.message}`;
+        console.error('generateSummary failed:', error);
+        throw error
+      } finally {
+        this.isLoading = false;
+      }
     },
-    regenerateSummary(prompt) {
-      // 模拟API请求
-      this.isLoading = true
-      setTimeout(() => {
-        const updatedSummary = {
-          ...this.generatedSummary,
-          id: Date.now(),
-          content: `${this.generatedSummary.content}\n\n根据您的反馈，进一步优化后的内容：\n- 补充了更多细节信息\n- 调整了结构和表述\n- 强化了关键观点的表达`,
-          prompt: this.generatedSummary.prompt + `\n\n优化要求：${prompt}`,
-          date: new Date().toISOString()
-        }
-        this.generatedSummary = updatedSummary
-        this.summaryHistory.push(updatedSummary)
-        this.isLoading = false
-      }, 2000)
+    async regenerateSummary(prompt) {
+      if (prompt) {
+        this.customPrompt = prompt;
+      }
+      await this.generateSummary();
     },
 
     // 导出操作
     exportToPdf() {
-      // 模拟API请求
-      this.isLoading = true
-      setTimeout(() => {
-        this.isLoading = false
-        this.successMessage = 'PDF导出成功'
-        // 创建一个虚拟的下载链接
-        const link = document.createElement('a')
-        link.href = '#'
-        link.download = `summary_${new Date().toISOString().slice(0, 10)}.pdf`
-        link.click()
-      }, 1000)
+      if (this.generatedSummary && this.generatedSummary.files && this.generatedSummary.files.pdf_path) {
+        // 使用后端返回的路径
+        const link = document.createElement('a');
+        link.href = `${api.defaults.baseURL}/${this.generatedSummary.files.pdf_path}`;
+        link.download = `summary_${new Date().toISOString().slice(0, 10)}.pdf`;
+        link.target = '_blank';
+        link.click();
+        this.successMessage = 'PDF开始下载';
+      } else {
+        this.errorMessage = '未能获取到PDF文件路径';
+      }
     },
     exportToWord() {
-      // 模拟API请求
-      this.isLoading = true
-      setTimeout(() => {
-        this.isLoading = false
-        this.successMessage = 'Word导出成功'
-        // 创建一个虚拟的下载链接
-        const link = document.createElement('a')
-        link.href = '#'
-        link.download = `summary_${new Date().toISOString().slice(0, 10)}.docx`
-        link.click()
-      }, 1000)
+      if (this.generatedSummary && this.generatedSummary.files && this.generatedSummary.files.word_path) {
+        // 使用后端返回的路径
+        const link = document.createElement('a');
+        link.href = `${api.defaults.baseURL}/${this.generatedSummary.files.word_path}`;
+        link.download = `summary_${new Date().toISOString().slice(0, 10)}.docx`;
+        link.target = '_blank';
+        link.click();
+        this.successMessage = 'Word开始下载';
+      } else {
+        this.errorMessage = '未能获取到Word文件路径';
+      }
     },
 
     // 清除消息

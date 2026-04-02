@@ -52,6 +52,11 @@ export const getKnowledgeFile = (fileId) => {
   })
 }
 
+// 获取知识库文本内容（用于无文件路径时的预览回退）
+export const getKnowledgeContent = (kbId) => {
+  return api.get(`/knowledge/content/${kbId}`)
+}
+
 // 获取类似推荐文章
 export const getRecommendationsMultiple = (kbIds, limit = 10) => {
   // Use URLSearchParams to properly serialize array parameters (kb_ids=1&kb_ids=2...)
@@ -78,6 +83,73 @@ export const buildTemplate = (description) => {
 // 批量解析知识库条目
 export const parseMaterials = (kbIds) => {
   return api.post('/material/parse', kbIds)
+}
+
+// 获取用户模板列表
+export const getMyTemplates = () => {
+  return api.get('/template/my')
+}
+
+// 新增模板
+export const addTemplateApi = (templateData) => {
+  return api.put('/template/add', templateData)
+}
+
+// 更新模板
+export const updateTemplateApi = (templateId, templateData) => {
+  return api.put(`/template/${templateId}`, templateData)
+}
+
+// 删除模板
+export const deleteTemplateApi = (templateId) => {
+  return api.delete(`/template/${templateId}`)
+}
+
+// 复制模板
+export const duplicateTemplateApi = (templateId, payload = {}) => {
+  return api.post(`/template/${templateId}/duplicate`, payload)
+}
+
+// 存入基础知识库 (MySQL) 
+export const addKnowledgeEntry = (data) => {
+  return api.post('/knowledge/add', data)
+}
+
+// 同步写入图数据库并切片 (Neo4j/GraphRAG)
+export const syncGraphRag = (data) => {
+  return api.post('/api/graphrag/sync-from-mysql', data)
+}
+
+// OCR 结果写入临时图谱作用域（不写 MySQL 知识库）
+export const upsertTempOcrGraph = (data) => {
+  return api.post('/api/graphrag/upsert-temp-ocr', data)
+}
+
+// 清理指定会话的临时 OCR 图数据
+export const cleanupTempOcrScope = (sessionScope) => {
+  return api.post('/api/graphrag/cleanup-temp-scope', {
+    session_scope: sessionScope
+  })
+}
+
+// 清理所有过期临时 OCR 图数据（兜底）
+export const cleanupExpiredTempOcr = () => {
+  return api.post('/api/graphrag/cleanup-temp-expired')
+}
+
+// 生成摘要
+export const generateSummaryApi = (templateId, data) => {
+  return api.post(`/template/${templateId}/summary`, data)
+}
+
+// 创建摘要任务（异步）
+export const createSummaryJobApi = (templateId, data) => {
+  return api.post(`/template/${templateId}/summary-jobs`, data)
+}
+
+// 查询摘要任务状态
+export const getSummaryJobStatusApi = (jobId) => {
+  return api.get(`/template/summary-jobs/${jobId}`)
 }
 
 export default api

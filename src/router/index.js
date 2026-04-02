@@ -100,4 +100,19 @@ router.beforeEach(async (to, from, next) => {
   }
 })
 
+router.afterEach((to, from) => {
+  if (to.name !== 'Home' || from.name === 'Home') {
+    return
+  }
+
+  const store = useAppStore()
+  if (!store.ocrSessionScope && (!Array.isArray(store.ocrResults) || store.ocrResults.length === 0)) {
+    return
+  }
+
+  store.cleanupTemporaryOcrData().catch(error => {
+    console.error('返回首页自动清理临时 OCR 数据失败:', error)
+  })
+})
+
 export default router

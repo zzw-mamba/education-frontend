@@ -255,6 +255,38 @@
               </span>
             </div>
 
+            <div
+              v-if="doc.same_tags && doc.same_tags.length"
+              class="mb-2"
+            >
+              <p class="text-xs text-secondary-500 mb-1">相同标签</p>
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="tag in doc.same_tags"
+                  :key="`same-${doc.id}-${tag}`"
+                  class="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100"
+                >
+                  {{ tag }}
+                </span>
+              </div>
+            </div>
+
+            <div
+              v-if="doc.different_tags && doc.different_tags.length"
+              class="mb-2"
+            >
+              <p class="text-xs text-secondary-500 mb-1">不同标签</p>
+              <div class="flex flex-wrap gap-1">
+                <span
+                  v-for="tag in doc.different_tags"
+                  :key="`diff-${doc.id}-${tag}`"
+                  class="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100"
+                >
+                  {{ tag }}
+                </span>
+              </div>
+            </div>
+
             <div class="flex items-center gap-2 mt-2">
               <span
                 class="text-xs text-primary-600 bg-primary-50 rounded px-2 py-1"
@@ -320,7 +352,23 @@
               class="shadow-lg mx-auto"
             />
             <div
-              v-if="!isPreviewLoading && !previewPdfUrl"
+              v-else-if="!isPreviewLoading && previewTextContent"
+              class="max-w-3xl mx-auto bg-white rounded-lg border border-gray-200 p-6 shadow-sm"
+            >
+              <h4 class="text-sm font-semibold text-secondary-700 mb-3">文本预览</h4>
+              <p class="text-sm text-secondary-700 leading-7 whitespace-pre-wrap">
+                {{ previewTextContent }}
+              </p>
+            </div>
+            <div
+              v-else-if="!isPreviewLoading && previewErrorMessage"
+              class="max-w-xl mx-auto mt-10 rounded-xl border border-red-200 bg-red-50 px-6 py-5 text-left"
+            >
+              <h4 class="text-sm font-bold text-red-700 mb-1">预览加载失败</h4>
+              <p class="text-sm text-red-600">{{ previewErrorMessage }}</p>
+            </div>
+            <div
+              v-else-if="!isPreviewLoading && !previewPdfUrl"
               class="text-center mt-10 text-gray-500"
             >
               正在加载预览内容...
@@ -343,7 +391,11 @@ import { computed, ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "../store";
 import VuePdfEmbed from "vue-pdf-embed";
-import { getKnowledgeFile, getRecommendationsMultiple } from "../services/api";
+import {
+  getKnowledgeFile,
+  getKnowledgeContent,
+  getRecommendationsMultiple,
+} from "../services/api";
 
 const router = useRouter();
 const store = useAppStore();
@@ -416,9 +468,31 @@ const toggleSelection = (doc) => {
 // 预览相关状态
 const showPreviewModal = ref(false);
 const previewPdfUrl = ref(null);
+const previewTextContent = ref("");
 const previewPdfTitle = ref("");
 const isPreviewLoading = ref(false);
 const currentPreviewDoc = ref(null);
+const previewErrorMessage = ref("");
+
+const parsePreviewErrorMessage = (error) => {
+  const status = error?.response?.status;
+  if (status === 404) {
+    return "未找到该文档对应的可预览文件，请确认文件已入库且路径可访问。";
+  }
+  if (status === 403) {
+    return "当前账号无权限访问该文档预览。";
+  }
+  return "请检查后端服务状态或稍后重试。";
+};
+
+const tryLoadTextPreview = async (docId) => {
+  const detail = await getKnowledgeContent(docId);
+  const textContent = String(detail?.content || "").trim();
+  if (!textContent) {
+    throw new Error("Empty content for text preview");
+  }
+  previewTextContent.value = textContent;
+};
 
 // 处理预览
 const handlePreview = async (doc) => {
@@ -428,6 +502,8 @@ const handlePreview = async (doc) => {
   showPreviewModal.value = true;
   console.log("showPreviewModal set to:", showPreviewModal.value); // DEBUG Log
   isPreviewLoading.value = true;
+  previewErrorMessage.value = "";
+  previewTextContent.value = "";
   if (previewPdfUrl.value) {
     URL.revokeObjectURL(previewPdfUrl.value);
     previewPdfUrl.value = null;
@@ -435,15 +511,25 @@ const handlePreview = async (doc) => {
 
   try {
     console.log("Fetching file with ID:", doc.id); // DEBUG Log
-    // 假设 API 返回 Blob
     const blob = await getKnowledgeFile(doc.id);
+    if (!blob || !blob.size) {
+      throw new Error("Empty preview blob");
+    }
     console.log("File fetched via API, blob size:", blob.size); // DEBUG Log
     previewPdfUrl.value = URL.createObjectURL(blob);
     console.log("Preview URL created:", previewPdfUrl.value); // DEBUG Log
   } catch (error) {
     console.error("Failed to load file preview", error);
-    // 如果是 404 或其他错误，可以提示用户
-    window.alert("预览加载失败：请检查后端服务或文件是否存在。");
+    if (error?.response?.status === 404) {
+      try {
+        await tryLoadTextPreview(doc.id);
+      } catch (fallbackError) {
+        console.error("Fallback text preview failed", fallbackError);
+        previewErrorMessage.value = parsePreviewErrorMessage(error);
+      }
+    } else {
+      previewErrorMessage.value = parsePreviewErrorMessage(error);
+    }
   } finally {
     isPreviewLoading.value = false;
   }
@@ -452,6 +538,8 @@ const handlePreview = async (doc) => {
 // 关闭预览
 const closePreview = () => {
   showPreviewModal.value = false;
+  previewErrorMessage.value = "";
+  previewTextContent.value = "";
   // 延迟清理 URL，避免闪烁
   setTimeout(() => {
     if (previewPdfUrl.value) {

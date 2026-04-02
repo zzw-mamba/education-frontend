@@ -117,30 +117,30 @@
         已上传文件 ({{ store.uploadedFiles.length }})
       </h3>
       <div class="bg-white rounded-xl shadow-sm overflow-hidden">
-        <table class="min-w-full divide-y divide-gray-200">
+        <table class="min-w-full divide-y divide-gray-200" style="table-layout: fixed; width: 100%;">
           <thead class="bg-gray-50">
             <tr>
               <th
                 scope="col"
-                class="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
+                class="w-[45%] px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
               >
                 文件名
               </th>
               <th
                 scope="col"
-                class="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
+                class="w-[15%] px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
               >
                 大小
               </th>
               <th
                 scope="col"
-                class="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
+                class="w-[20%] px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
               >
                 状态
               </th>
               <th
                 scope="col"
-                class="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
+                class="w-[20%] px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider"
               >
                 操作
               </th>
@@ -151,8 +151,8 @@
               v-for="file in store.uploadedFiles"
               :key="file.name + file.size"
             >
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center">
+              <td class="px-6 py-4 whitespace-nowrap max-w-0">
+                <div class="flex min-w-0 items-center w-full">
                   <i
                     class="fa fa-file-pdf-o text-red-500 mr-3 text-xl"
                     v-if="file.name.endsWith('.pdf')"
@@ -165,8 +165,12 @@
                       file.name.endsWith('.png')
                     "
                   ></i>
-                  <div>
-                    <div class="text-sm font-medium text-secondary-900">
+                  <div class="min-w-0 flex-1 w-full">
+                    <div
+                      class="text-sm font-medium text-secondary-900"
+                      :title="file.name"
+                      style="display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                    >
                       {{ file.name }}
                     </div>
                   </div>

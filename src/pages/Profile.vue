@@ -1,11 +1,5 @@
 <template>
   <div class="container-custom py-16 space-y-10">
-    <div
-      v-if="errorMessage"
-      class="p-4 rounded-2xl bg-red-50 border border-red-100 text-red-600 text-sm"
-    >
-      {{ errorMessage }}
-    </div>
     <div class="flex flex-col lg:flex-row gap-8">
       <div class="lg:w-1/3 space-y-6">
         <div
@@ -136,10 +130,10 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div class="space-y-2">
                 <label class="text-sm font-semibold text-secondary-700"
-                  >姓名</label
+                  >用户名</label
                 >
                 <input
-                  v-model="profile.name"
+                  v-model="profile.username"
                   type="text"
                   class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 transition-all bg-white"
                 />
@@ -256,11 +250,11 @@
             </div>
             <div class="md:col-span-3 flex items-center justify-between pt-1">
               <div class="text-xs text-secondary-500">
-                建议包含大小写、数字与符号，长度不少于 12 位。
+                建议包含大小写、数字与符号，长度不少于 8 位。
               </div>
               <button
                 type="submit"
-                class="px-4 py-2.5 rounded-xl bg-secondary-900 text-white font-semibold hover:bg-secondary-800 transition-colors"
+                class="px-4 py-2.5 rounded-xl bg-secondary-900 text-white font-semibold hover:bg-secondary-800 transition-colors focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
               >
                 更新密码
               </button>
@@ -284,17 +278,50 @@
       </div>
     </div>
   </div>
+
+  <Teleport to="body">
+    <Transition name="toast-fade">
+      <div
+        v-if="successMessage"
+        class="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] w-[min(92vw,26rem)] pointer-events-none"
+        aria-live="polite"
+      >
+        <div
+          class="rounded-xl border border-emerald-200 bg-emerald-50/95 px-4 py-3 text-sm text-emerald-800 shadow-2xl backdrop-blur"
+        >
+          {{ successMessage }}
+        </div>
+      </div>
+    </Transition>
+    <Transition name="toast-fade">
+      <div
+        v-if="errorMessage"
+        class="fixed top-20 left-1/2 -translate-x-1/2 z-[9999] w-[min(92vw,26rem)] pointer-events-none"
+        aria-live="assertive"
+      >
+        <div
+          class="rounded-xl border border-red-200 bg-red-50/95 px-4 py-3 text-sm text-red-700 shadow-2xl backdrop-blur"
+        >
+          {{ errorMessage }}
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from "vue";
+import { computed, reactive, ref, onBeforeUnmount, onMounted } from "vue";
 import { useAppStore } from "../store";
 
 const store = useAppStore();
 const errorMessage = ref("");
+const successMessage = ref("");
+const successTimer = ref(null);
+const errorTimer = ref(null);
 
 const profile = reactive({
-  name: store.user?.name ?? "",
+  username: store.user?.username ?? "",
+  name: store.user?.name ?? store.user?.username ?? "",
   email: store.user?.email ?? "",
   phone: store.user?.phone ?? "",
   location: store.user?.location ?? "",
@@ -317,7 +344,8 @@ const initials = computed(() =>
 const mergeProfile = (data) => {
   if (!data) return;
   Object.assign(profile, {
-    name: data.name || profile.name,
+    username: data.username || profile.username,
+    name: data.name || data.username || profile.name,
     email: data.email || profile.email,
     phone: data.phone || profile.phone,
     location: data.location || profile.location,
@@ -328,14 +356,36 @@ const mergeProfile = (data) => {
   });
 };
 
+const showSuccessToast = (message) => {
+  successMessage.value = message;
+  if (successTimer.value) {
+    clearTimeout(successTimer.value);
+  }
+  successTimer.value = setTimeout(() => {
+    successMessage.value = "";
+    successTimer.value = null;
+  }, 3000);
+};
+
+const showErrorToast = (message) => {
+  errorMessage.value = message;
+  if (errorTimer.value) {
+    clearTimeout(errorTimer.value);
+  }
+  errorTimer.value = setTimeout(() => {
+    errorMessage.value = "";
+    errorTimer.value = null;
+  }, 3500);
+};
+
 onMounted(async () => {
   errorMessage.value = "";
+  successMessage.value = "";
   try {
     const data = await store.fetchProfile();
     mergeProfile(data);
   } catch (err) {
-    errorMessage.value =
-      err?.response?.data?.detail || err.message || "获取个人信息失败";
+    showErrorToast(err?.response?.data?.detail || err.message || "获取个人信息失败");
   }
 });
 
@@ -344,14 +394,17 @@ const handleSaveProfile = async () => {
   try {
     const data = await store.updateProfile({ ...profile });
     mergeProfile(data);
+    showSuccessToast("个人信息保存成功");
   } catch (err) {
-    errorMessage.value =
-      err?.response?.data?.detail || err.message || "更新个人信息失败";
+    showErrorToast(err?.response?.data?.detail || err.message || "更新个人信息失败");
   }
 };
 
 const handleUpdatePassword = async () => {
-  if (!security.next || security.next !== security.confirm) return;
+  if (!security.next || security.next !== security.confirm) {
+    showErrorToast("两次输入的新密码不一致");
+    return;
+  }
   errorMessage.value = "";
   try {
     await store.changePassword({
@@ -361,9 +414,31 @@ const handleUpdatePassword = async () => {
     security.current = "";
     security.next = "";
     security.confirm = "";
+    showSuccessToast("密码已更新");
   } catch (err) {
-    errorMessage.value =
-      err?.response?.data?.detail || err.message || "更新密码失败";
+    showErrorToast(err?.response?.data?.detail || err.message || "更新密码失败");
   }
 };
+
+onBeforeUnmount(() => {
+  if (successTimer.value) {
+    clearTimeout(successTimer.value);
+  }
+  if (errorTimer.value) {
+    clearTimeout(errorTimer.value);
+  }
+});
 </script>
+
+<style scoped>
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast-fade-enter-from,
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-14px);
+}
+</style>

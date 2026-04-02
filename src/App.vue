@@ -86,6 +86,15 @@
               <i class="fa fa-user-circle"></i>
               <span>个人中心</span>
             </router-link>
+            <button
+              v-if="store.isAuthenticated"
+              type="button"
+              class="logout-danger-btn px-4 py-2 text-base font-semibold text-red-600 border-2 border-red-300 rounded-lg hover:text-red-700 hover:border-red-400 hover:bg-red-50 transition-colors duration-200 flex items-center space-x-2 focus:outline-none"
+              @click="openLogoutConfirm"
+            >
+              <i class="fa fa-sign-out"></i>
+              <span>退出登录</span>
+            </button>
           </div>
           <button
             class="md:hidden text-secondary-600 hover:text-primary-600 transition-colors"
@@ -142,16 +151,89 @@
     </footer>
     <!-- 认证对话框 -->
     <auth-dialog ref="authDialogRef" />
+
+    <!-- 退出确认弹窗 -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="showLogoutConfirm"
+          class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/35 px-4"
+          @click.self="closeLogoutConfirm"
+        >
+          <div class="w-full max-w-md rounded-2xl border border-white/70 bg-white/90 p-6 shadow-2xl backdrop-blur-md">
+            <div class="flex items-start gap-3">
+              <div class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <i class="fa fa-sign-out"></i>
+              </div>
+              <div class="flex-1">
+                <h3 class="text-lg font-semibold text-secondary-900">确认退出登录？</h3>
+                <p class="mt-1 text-sm text-secondary-600">
+                  退出后将清除当前登录状态，你可以稍后重新登录继续使用。
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-6 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                class="logout-cancel-btn px-4 py-2 text-sm font-semibold text-secondary-700 border border-gray-300 rounded-lg hover:border-gray-400 hover:bg-gray-50 transition-colors focus:outline-none"
+                @click="closeLogoutConfirm"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                class="logout-danger-btn px-4 py-2 text-sm font-semibold text-white bg-red-600 rounded-lg border-2 border-red-300 shadow-md shadow-red-500/20 hover:bg-red-700 hover:border-red-400 transition-colors focus:outline-none"
+                @click="confirmLogout"
+              >
+                确认退出
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
 import { useAppStore } from "./store";
-import { ref } from "vue";
+import { ref, onMounted, onBeforeUnmount } from "vue";
+import { useRouter } from "vue-router";
 import AuthDialog from "./components/AuthDialog.vue";
 
 const store = useAppStore();
+const router = useRouter();
 const authDialogRef = ref(null);
+const showLogoutConfirm = ref(false);
+
+const openLogoutConfirm = () => {
+  showLogoutConfirm.value = true;
+};
+
+const closeLogoutConfirm = () => {
+  showLogoutConfirm.value = false;
+};
+
+const handleGlobalKeydown = (event) => {
+  if (event.key === "Escape" && showLogoutConfirm.value) {
+    closeLogoutConfirm();
+  }
+};
+
+const confirmLogout = () => {
+  showLogoutConfirm.value = false;
+  store.logout();
+  router.push("/");
+};
+
+onMounted(() => {
+  window.addEventListener("keydown", handleGlobalKeydown);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", handleGlobalKeydown);
+});
 
 // 暴露给路由守卫使用
 globalThis.$authDialog = authDialogRef;
@@ -166,5 +248,19 @@ globalThis.$authDialog = authDialogRef;
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.logout-danger-btn:focus,
+.logout-danger-btn:focus-visible,
+.logout-danger-btn:active {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.logout-cancel-btn:focus,
+.logout-cancel-btn:focus-visible,
+.logout-cancel-btn:active {
+  outline: none !important;
+  box-shadow: none !important;
 }
 </style>
