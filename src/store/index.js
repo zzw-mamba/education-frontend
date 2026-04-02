@@ -89,7 +89,15 @@ export const useAppStore = defineStore('app', {
     ],
     selectedTemplate: null,
     customPrompt: '',
-    summaryTopic: '', // 用户指定的摘要主题
+    summaryTopic: '', // 用户指定的摘要主题（检索问题）
+    summaryTopK: 8, // 向量召回数量
+    summaryFocusDirection: '行业发展趋势与技术演进路径', // 关注方向
+    summaryStyle: '客观严谨的学术/商业报告风格', // 摘要风格
+    summaryWordLimit: '500-800字', // 字数限制（字符串）
+    summaryGraphTopEntities: 8, // 每篇论文抽取的核心实体数
+    summarySnippetsPerEntity: 2, // 每个实体保留的上下文片段数
+    summaryNeighborLimit: 4, // 图谱实体邻居数量
+    summaryMaxGraphPapers: 3, // 最多补充图谱上下文的论文数
 
     // 摘要状态
     generatedSummary: null,
@@ -310,11 +318,30 @@ export const useAppStore = defineStore('app', {
     async parseSelectedDocuments() {
       if (this.selectedDocuments.length === 0) return
       this.isLoading = true
+      console.log(this.selectedDocuments)
       try {
-        const kbIds = this.selectedDocuments.map(doc => doc.id)
+        // 优先复用数据库中已返回的 content，只有缺失内容的文档才走解析接口。
+        const missingContentDocs = this.selectedDocuments.filter(doc => {
+          const content = typeof doc?.content === 'string' ? doc.content.trim() : ''
+          return !content
+        })
+
+        if (missingContentDocs.length === 0) {
+          this.parsedMaterialsPath = null
+          this.successMessage = '已复用文档内容，无需重新解析'
+          return {
+            skipped: true,
+            reason: 'all_documents_have_content'
+          }
+        }
+
+        const kbIds = missingContentDocs.map(doc => doc.id)
         const response = await parseMaterials(kbIds)
         this.parsedMaterialsPath = response.file_path
-        this.successMessage = '文档解析完成'
+        this.successMessage =
+          missingContentDocs.length === this.selectedDocuments.length
+            ? '文档解析完成'
+            : '部分文档已复用内容，其余文档解析完成'
         return response
       } catch (error) {
         console.error('Failed to parse documents:', error)
@@ -586,32 +613,118 @@ export const useAppStore = defineStore('app', {
       }, 2000)
     },
 
-    // 导出操作
-    exportToPdf() {
-      // 模拟API请求
-      this.isLoading = true
-      setTimeout(() => {
-        this.isLoading = false
-        this.successMessage = 'PDF导出成功'
-        // 创建一个虚拟的下载链接
-        const link = document.createElement('a')
-        link.href = '#'
-        link.download = `summary_${new Date().toISOString().slice(0, 10)}.pdf`
-        link.click()
-      }, 1000)
+    _getExportFileMeta(format) {
+      const ext = format === 'word' ? 'docx' : 'pdf'
+      const files = this.generatedSummary?.files || {}
+      const pathFromFiles = format === 'word' ? files.word_path : files.pdf_path
+      const directUrl = format === 'word'
+        ? (files.word_url || files.word_download_url || files.download_word_url || files.docx_url)
+        : (files.pdf_url || files.pdf_download_url || files.download_pdf_url)
+
+      const resultId = files.result_id
+      const normalizeRelativePath = rawPath => {
+        if (typeof rawPath !== 'string') return ''
+        const trimmed = rawPath.trim()
+        if (!trimmed) return ''
+        if (/^https?:\/\//i.test(trimmed)) return trimmed
+        const slashPath = trimmed.replace(/\\/g, '/')
+        return slashPath.startsWith('/') ? slashPath : `/${slashPath}`
+      }
+
+      const relativePath = normalizeRelativePath(pathFromFiles)
+      const fileNameFromPath = typeof pathFromFiles === 'string'
+        ? pathFromFiles.split(/[\\/]/).pop()
+        : ''
+      const expectedFileName = resultId ? `${resultId}.${ext}` : ''
+
+      const candidates = []
+      if (typeof directUrl === 'string' && directUrl.trim()) {
+        candidates.push(directUrl.trim())
+      }
+      if (relativePath) {
+        candidates.push(relativePath)
+      }
+      if (fileNameFromPath) {
+        candidates.push(`/summary_exports/${fileNameFromPath}`)
+        candidates.push(`/analysis_results/summary_exports/${fileNameFromPath}`)
+      }
+      if (expectedFileName) {
+        candidates.push(`/summary_exports/${expectedFileName}`)
+        candidates.push(`/analysis_results/summary_exports/${expectedFileName}`)
+      }
+      if (resultId) {
+        candidates.push(`/template/summary/export/${resultId}/${ext}`)
+        candidates.push(`/template/summary/export/${resultId}.${ext}`)
+      }
+
+      return {
+        ext,
+        pathFromFiles,
+        fileName: fileNameFromPath || expectedFileName || `summary_${new Date().toISOString().slice(0, 10)}.${ext}`,
+        candidates: Array.from(new Set(candidates))
+      }
     },
-    exportToWord() {
-      // 模拟API请求
+
+    async _downloadExportByCandidates(candidates, downloadName) {
+      const normalized = candidates.filter(url => typeof url === 'string' && url.trim())
+      for (const url of normalized) {
+        try {
+          const blob = await api.get(url, { responseType: 'blob' })
+          if (blob && blob.size > 0) {
+            const objectUrl = window.URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = objectUrl
+            link.download = downloadName
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            window.URL.revokeObjectURL(objectUrl)
+            return true
+          }
+        } catch (_) {
+          // 尝试下一个候选下载地址
+        }
+      }
+
+      return false
+    },
+
+    // 导出操作
+    async exportToPdf() {
       this.isLoading = true
-      setTimeout(() => {
+      this.errorMessage = null
+
+      try {
+        const { candidates, fileName } = this._getExportFileMeta('pdf')
+        const downloaded = await this._downloadExportByCandidates(candidates, fileName)
+
+        if (!downloaded) {
+          this.errorMessage = 'PDF导出失败：未找到可访问的下载地址。'
+          return
+        }
+
+        this.successMessage = 'PDF导出成功'
+      } finally {
         this.isLoading = false
+      }
+    },
+    async exportToWord() {
+      this.isLoading = true
+      this.errorMessage = null
+
+      try {
+        const { candidates, fileName } = this._getExportFileMeta('word')
+        const downloaded = await this._downloadExportByCandidates(candidates, fileName)
+
+        if (!downloaded) {
+          this.errorMessage = 'Word导出失败：未找到可访问的下载地址。'
+          return
+        }
+
         this.successMessage = 'Word导出成功'
-        // 创建一个虚拟的下载链接
-        const link = document.createElement('a')
-        link.href = '#'
-        link.download = `summary_${new Date().toISOString().slice(0, 10)}.docx`
-        link.click()
-      }, 1000)
+      } finally {
+        this.isLoading = false
+      }
     },
 
     // 清除消息

@@ -188,11 +188,6 @@
                   template.description
                 }}
               </p>
-              <div class="text-xs text-secondary-500">示例输出：</div>
-              <pre
-                class="bg-gray-100 rounded p-3 text-xs mt-2 overflow-x-auto"
-                >{{ template.example || template.preview }}</pre
-              >
             </div>
           </transition>
         </div>
@@ -269,6 +264,131 @@
       </div>
     </div>
 
+    <!-- 生成参数配置 -->
+    <div class="card mb-8">
+      <h3 class="text-xl font-semibold text-secondary-900 mb-4">
+        生成参数配置
+      </h3>
+      <div class="space-y-4">
+        <!-- 检索问题 -->
+        <div>
+          <label class="block text-sm font-medium text-secondary-700 mb-1">
+            检索问题 <span class="text-red-500">*</span>
+          </label>
+          <input
+            v-model="queryText"
+            type="text"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            placeholder="请输入检索问题，例如：深度学习在图像识别中的应用"
+          />
+          <p class="text-xs text-secondary-400 mt-1">
+            将用于在知识图谱中检索相关文献片段
+          </p>
+        </div>
+        <!-- 关注方向 -->
+        <div>
+          <label class="block text-sm font-medium text-secondary-700 mb-1">
+            关注方向 <span class="text-secondary-400 text-xs">(可选)</span>
+          </label>
+          <input
+            v-model="focusDirection"
+            type="text"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            placeholder="例如：方法对比、实验结果、应用场景"
+          />
+        </div>
+        <!-- 摘要风格 + 字数限制 -->
+        <div class="flex gap-4">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-secondary-700 mb-1">
+              摘要风格 <span class="text-secondary-400 text-xs">(可选)</span>
+            </label>
+            <input
+              v-model="summaryStyle"
+              type="text"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+              placeholder="例如：客观严谨的学术/商业报告风格"
+            />
+          </div>
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-secondary-700 mb-1">
+              字数限制 <span class="text-secondary-400 text-xs">(可选)</span>
+            </label>
+            <input
+              v-model="wordLimit"
+              type="text"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+              placeholder="例如：500-800字"
+            />
+          </div>
+        </div>
+
+        <!-- 检索与图谱参数 -->
+        <!-- <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-secondary-700 mb-1">
+              向量召回数量 top_k
+            </label>
+            <input
+              v-model.number="topK"
+              type="number"
+              min="1"
+              max="30"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-secondary-700 mb-1">
+              核心实体数 graph_top_entities
+            </label>
+            <input
+              v-model.number="graphTopEntities"
+              type="number"
+              min="1"
+              max="20"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-secondary-700 mb-1">
+              每实体片段数 snippets_per_entity
+            </label>
+            <input
+              v-model.number="snippetsPerEntity"
+              type="number"
+              min="1"
+              max="5"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-secondary-700 mb-1">
+              邻居数量 neighbor_limit
+            </label>
+            <input
+              v-model.number="neighborLimit"
+              type="number"
+              min="0"
+              max="20"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-secondary-700 mb-1">
+              图谱论文上限 max_graph_papers
+            </label>
+            <input
+              v-model.number="maxGraphPapers"
+              type="number"
+              min="1"
+              max="10"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400"
+            />
+          </div>
+        </div> -->
+      </div>
+    </div>
+
     <!-- 操作按钮 -->
     <div class="flex justify-between">
       <button @click="prevStep" class="btn-secondary">
@@ -277,7 +397,7 @@
       <button
         @click="nextStep"
         class="btn-primary"
-        :disabled="!selectedTemplateId"
+        :disabled="!selectedTemplateId || !queryText.trim()"
       >
         生成摘要 <i class="fa fa-arrow-right ml-2"></i>
       </button>
@@ -289,6 +409,7 @@
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "../store";
+import { getMyTemplates } from "../services/api";
 
 const router = useRouter();
 const store = useAppStore();
@@ -301,6 +422,19 @@ const selectedTemplateId = ref(
   store.selectedTemplate ? store.selectedTemplate.id : null
 );
 
+// 生成参数
+const queryText = ref(store.summaryTopic || "");
+const topK = ref(store.summaryTopK || 8);
+const focusDirection = ref(
+  store.summaryFocusDirection || "行业发展趋势与技术演进路径"
+);
+const summaryStyle = ref(store.summaryStyle || "客观严谨的学术/商业报告风格");
+const wordLimit = ref(store.summaryWordLimit || "500-800字");
+const graphTopEntities = ref(store.summaryGraphTopEntities || 8);
+const snippetsPerEntity = ref(store.summarySnippetsPerEntity || 2);
+const neighborLimit = ref(store.summaryNeighborLimit || 4);
+const maxGraphPapers = ref(store.summaryMaxGraphPapers || 3);
+
 // 用于展开详情的模板ID
 const expandedId = ref(null);
 
@@ -312,6 +446,55 @@ const reportFile = ref(null);
 const reportRawContent = ref(""); // 文件原始内容（仅供解析用）
 const reportPreview = ref("");
 const isParsing = ref(false);
+
+const normalizeTags = (labels) => {
+  if (!labels) return [];
+  if (Array.isArray(labels)) {
+    return labels.map((tag) => String(tag).trim()).filter(Boolean);
+  }
+  if (typeof labels === "string") {
+    const text = labels.trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        return parsed.map((tag) => String(tag).trim()).filter(Boolean);
+      }
+    } catch (_) {
+      // ignore parse error and fallback to comma split
+    }
+    return text
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const fetchTemplates = async () => {
+  try {
+    const response = await getMyTemplates();
+    const list = Array.isArray(response?.data) ? response.data : [];
+
+    const mappedTemplates = list.map((template) => ({
+      id: template.id,
+      userId: template.user_id,
+      name: template.name || "未命名模板",
+      description: template.description || "",
+      preview: template.example || template.prompt || "",
+      prompt: template.prompt || "",
+      example: template.example || template.prompt || "",
+      category: template.category,
+      tags: normalizeTags(template.labels),
+      iconPath: template.icon_path || "",
+      updatedAt: template.updated_at || template.created_at || null,
+    }));
+
+    store.templates = mappedTemplates;
+  } catch (error) {
+    console.error("获取模板失败:", error);
+  }
+};
 
 const handleReportFile = (event) => {
   const f = event.target.files && event.target.files[0];
@@ -350,6 +533,7 @@ const generateTemplateFromReport = async () => {
     // 使用新模板并显示解析后的预览信息
     selectedTemplateId.value = newTemplate.id;
     customPrompt.value = newTemplate.prompt || "";
+    store.updateCustomPrompt(customPrompt.value);
     // 将解析生成的 preview 放到 preview 区显示
     reportPreview.value =
       newTemplate.preview ||
@@ -368,6 +552,8 @@ const generateTemplateFromReport = async () => {
 const selectTemplate = (template) => {
   selectedTemplateId.value = template.id;
   store.selectTemplate(template);
+  customPrompt.value = template.prompt || "";
+  store.updateCustomPrompt(customPrompt.value);
 };
 
 // 切换展开/收起
@@ -377,6 +563,7 @@ const toggleExpand = (id) => {
 
 // 更新自定义提示词
 const updateCustomPrompt = () => {
+  console.log("Updating custom prompt:", customPrompt.value);
   store.updateCustomPrompt(customPrompt.value);
 };
 
@@ -393,8 +580,30 @@ const prevStep = () => {
 
 // 下一步
 const nextStep = () => {
-  if (selectedTemplateId.value) {
+  if (selectedTemplateId.value && queryText.value.trim()) {
     updateCustomPrompt();
+    store.summaryTopic = queryText.value.trim();
+    store.summaryTopK = Math.min(30, Math.max(1, Number(topK.value) || 8));
+    store.summaryFocusDirection =
+      focusDirection.value || "行业发展趋势与技术演进路径";
+    store.summaryStyle = summaryStyle.value || "客观严谨的学术/商业报告风格";
+    store.summaryWordLimit = wordLimit.value || "500-800字";
+    store.summaryGraphTopEntities = Math.min(
+      20,
+      Math.max(1, Number(graphTopEntities.value) || 8)
+    );
+    store.summarySnippetsPerEntity = Math.min(
+      5,
+      Math.max(1, Number(snippetsPerEntity.value) || 2)
+    );
+    store.summaryNeighborLimit = Math.min(
+      20,
+      Math.max(0, Number(neighborLimit.value) || 4)
+    );
+    store.summaryMaxGraphPapers = Math.min(
+      10,
+      Math.max(1, Number(maxGraphPapers.value) || 3)
+    );
     router.push("/summary-generate");
     store.nextStep();
   }
@@ -409,14 +618,25 @@ const formatFileSize = (bytes) => {
 };
 
 // 页面挂载时，默认选择第一个模板（如果未选择）
-onMounted(() => {
+onMounted(async () => {
+  await fetchTemplates();
+
   if (store.selectedTemplate && store.selectedTemplate.id) {
-    selectedTemplateId.value = store.selectedTemplate.id;
+    const matched = templates.value.find(
+      (template) => template.id === store.selectedTemplate.id
+    );
+    if (matched) {
+      selectedTemplateId.value = matched.id;
+      store.selectTemplate(matched);
+      customPrompt.value = matched.prompt || "";
+      store.updateCustomPrompt(customPrompt.value);
+    }
   } else if (templates.value && templates.value.length > 0) {
     const first = templates.value[0];
     selectedTemplateId.value = first.id;
     store.selectTemplate(first);
     customPrompt.value = first.prompt || "";
+    store.updateCustomPrompt(customPrompt.value);
   }
 });
 </script>

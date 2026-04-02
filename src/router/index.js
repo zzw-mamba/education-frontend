@@ -7,6 +7,8 @@ import TemplateSelect from '../pages/TemplateSelect.vue'
 import TemplateLibrary from '../pages/TemplateLibrary.vue'
 import SummaryGenerate from '../pages/SummaryGenerate.vue'
 import ResultView from '../pages/ResultView.vue'
+import GenerationHistory from '../pages/GenerationHistory.vue'
+import HelpDocs from '../pages/HelpDocs.vue'
 import Login from '../pages/Login.vue'
 import Register from '../pages/Register.vue'
 import Profile from '../pages/Profile.vue'
@@ -17,6 +19,11 @@ const routes = [
     path: '/',
     name: 'Home',
     component: Home
+  },
+  {
+    path: '/help-docs',
+    name: 'HelpDocs',
+    component: HelpDocs
   },
   {
     path: '/login',
@@ -75,6 +82,12 @@ const routes = [
     path: '/result-view',
     name: 'ResultView',
     component: ResultView
+  },
+  {
+    meta: { requiresAuth: true },
+    path: '/generation-history',
+    name: 'GenerationHistory',
+    component: GenerationHistory
   }
 ]
 

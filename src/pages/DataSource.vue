@@ -695,6 +695,8 @@ const selectDocument = (doc) => {
 
   if (!isAlreadySelected) {
     console.log("Adding document:", doc.id);
+    const directContent =
+      doc.content || doc.full_content || doc.fullText || doc.abstract || "";
     store.initialDocuments.push({
       id: doc.id,
       title: doc.title,
@@ -702,6 +704,7 @@ const selectDocument = (doc) => {
       authors: doc.authors,
       year: doc.year,
       score: doc.score,
+      content: typeof directContent === "string" ? directContent : "",
     });
   } else {
     // Optional: If already selected, maybe just log it or remove it?

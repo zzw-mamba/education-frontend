@@ -97,15 +97,50 @@
 
     <!-- 摘要内容 -->
     <div class="card mb-8">
-      <div class="prose max-w-none">
-        <p
-          v-for="(paragraph, index) in summary.content.split('\n\n')"
-          :key="index"
-          class="mb-4"
-        >
-          {{ paragraph }}
-        </p>
+      <div class="mb-4 flex items-center justify-between">
+        <h3 class="text-lg font-semibold text-secondary-800">摘要内容</h3>
+        <span class="text-xs text-secondary-400">Markdown 渲染</span>
       </div>
+      <div
+        v-if="renderedSummaryHtml"
+        class="markdown-content"
+        v-html="renderedSummaryHtml"
+      ></div>
+      <p v-else class="text-secondary-400">暂无摘要内容</p>
+    </div>
+
+    <!-- 引用来源 -->
+    <div v-if="citations.length > 0" class="card mb-8">
+      <h3 class="text-lg font-semibold text-secondary-800 mb-4">
+        <i class="fa fa-book mr-2 text-primary-500"></i>引用来源
+      </h3>
+      <ol class="space-y-3 list-none">
+        <li
+          v-for="item in citations"
+          :key="item.key"
+          class="flex gap-3 text-sm"
+        >
+          <span
+            class="shrink-0 w-8 h-6 flex items-center justify-center rounded bg-primary-50 text-primary-600 font-mono font-semibold text-xs border border-primary-100"
+          >
+            {{ item.key }}
+          </span>
+          <div class="text-secondary-700 leading-relaxed">
+            <span v-if="item.title" class="font-medium text-secondary-900">{{
+              item.title
+            }}</span>
+            <span v-if="item.authors" class="text-secondary-500">
+              — {{ item.authors }}</span
+            >
+            <span v-if="item.year" class="text-secondary-400">
+              ({{ item.year }})</span
+            >
+            <span v-if="!item.title" class="text-secondary-500">{{
+              item.raw
+            }}</span>
+          </div>
+        </li>
+      </ol>
     </div>
 
     <!-- 操作按钮 -->
@@ -151,6 +186,8 @@
 import { ref, computed } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "../store";
+import { marked } from "marked";
+import hljs from "highlight.js";
 
 const router = useRouter();
 const store = useAppStore();
@@ -166,6 +203,90 @@ const sourceCount = computed(() => {
   return dataSourceType.value === "knowledgeBase"
     ? store.selectedDocuments.length
     : store.ocrResults.length;
+});
+
+const escapeHtml = (unsafe) => {
+  return String(unsafe)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+};
+
+const sanitizeHtml = (dirtyHtml) => {
+  if (!dirtyHtml) return "";
+
+  const parser = new DOMParser();
+  const documentNode = parser.parseFromString(dirtyHtml, "text/html");
+
+  documentNode
+    .querySelectorAll("script, style, iframe, object, embed, form")
+    .forEach((node) => node.remove());
+
+  documentNode.querySelectorAll("*").forEach((node) => {
+    Array.from(node.attributes).forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim().toLowerCase();
+      if (name.startsWith("on")) {
+        node.removeAttribute(attribute.name);
+      }
+      if (
+        (name === "href" || name === "src") &&
+        value.startsWith("javascript:")
+      ) {
+        node.removeAttribute(attribute.name);
+      }
+    });
+  });
+
+  return documentNode.body.innerHTML;
+};
+
+const renderer = new marked.Renderer();
+renderer.link = ({ href, title, tokens }) => {
+  const text = marked.parser(tokens || []);
+  const safeHref = href ? String(href) : "#";
+  const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+  return `<a href="${escapeHtml(
+    safeHref
+  )}" target="_blank" rel="noopener noreferrer"${titleAttr}>${text}</a>`;
+};
+
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+  renderer,
+  highlight(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+});
+
+const renderedSummaryHtml = computed(() => {
+  const content = summary.value?.content;
+  if (!content) return "";
+  const markdownHtml = marked.parse(content);
+  return sanitizeHtml(markdownHtml);
+});
+
+// 引用列表：将对象 { "[1]": {...}, "[2]": {...} } 转为有序数组
+const citations = computed(() => {
+  const raw = summary.value?.citations;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  return Object.entries(raw).map(([key, val]) => {
+    if (typeof val === "string")
+      return { key, raw: val, title: null, authors: null, year: null };
+    return {
+      key,
+      title: val.title || val.name || null,
+      authors: val.authors || val.author || null,
+      year: val.year || val.published_year || null,
+      raw: null,
+    };
+  });
 });
 
 // 重新生成表单显示状态
@@ -213,8 +334,107 @@ const submitRegeneration = () => {
 </script>
 
 <style scoped>
-/* 可以在这里添加结果查看页面特定的样式 */
-.prose p {
-  @apply text-secondary-700;
+:deep(.markdown-content) {
+  color: #334155;
+  line-height: 1.8;
+  font-size: 15px;
+}
+
+:deep(.markdown-content h1),
+:deep(.markdown-content h2),
+:deep(.markdown-content h3),
+:deep(.markdown-content h4) {
+  color: #0f172a;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 1.2em 0 0.6em;
+}
+
+:deep(.markdown-content h1) {
+  font-size: 1.6rem;
+}
+
+:deep(.markdown-content h2) {
+  font-size: 1.35rem;
+}
+
+:deep(.markdown-content h3) {
+  font-size: 1.15rem;
+}
+
+:deep(.markdown-content p) {
+  margin: 0.8em 0;
+}
+
+:deep(.markdown-content a) {
+  color: #0f766e;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+}
+
+:deep(.markdown-content ul),
+:deep(.markdown-content ol) {
+  margin: 0.8em 0;
+  padding-left: 1.4em;
+}
+
+:deep(.markdown-content li) {
+  margin: 0.35em 0;
+}
+
+:deep(.markdown-content blockquote) {
+  margin: 1em 0;
+  padding: 0.7em 1em;
+  border-left: 4px solid #14b8a6;
+  background: #f0fdfa;
+  border-radius: 0.35rem;
+  color: #0f766e;
+}
+
+:deep(.markdown-content pre) {
+  margin: 1em 0;
+  padding: 0.85em 1em;
+  border-radius: 0.75rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  overflow-x: auto;
+}
+
+:deep(.markdown-content code) {
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 0.92em;
+}
+
+:deep(.markdown-content :not(pre) > code) {
+  padding: 0.15em 0.4em;
+  border-radius: 0.35rem;
+  background: #f1f5f9;
+  color: #be123c;
+}
+
+:deep(.markdown-content table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+
+:deep(.markdown-content th),
+:deep(.markdown-content td) {
+  border: 1px solid #e2e8f0;
+  padding: 0.55em 0.7em;
+  text-align: left;
+  vertical-align: top;
+}
+
+:deep(.markdown-content th) {
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+:deep(.markdown-content hr) {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.25em 0;
 }
 </style>

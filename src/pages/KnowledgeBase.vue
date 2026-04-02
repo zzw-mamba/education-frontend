@@ -119,7 +119,10 @@
         <h3 class="text-xl font-semibold mb-4">
           初轮搜索结果 ({{ initialDocuments.length }})
         </h3>
-        <div v-if="isLoading" class="flex justify-center items-center py-12">
+        <div
+          v-if="isInitialLoading"
+          class="flex justify-center items-center py-12"
+        >
           <div
             class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-600"
           ></div>
@@ -277,9 +280,18 @@
       <button
         @click="nextStep"
         class="btn-primary"
-        :disabled="selectedDocuments.length === 0 || isLoading"
+        :disabled="
+          selectedDocuments.length === 0 ||
+          isInitialLoading ||
+          isRecommendationLoading
+        "
       >
-        <span v-if="isLoading && selectedDocuments.length > 0">
+        <span
+          v-if="
+            (isInitialLoading || isRecommendationLoading) &&
+            selectedDocuments.length > 0
+          "
+        >
           <i class="fa fa-spinner fa-spin mr-2"></i> 处理中...
         </span>
         <span v-else> 下一步 <i class="fa fa-arrow-right ml-2"></i> </span>
@@ -343,7 +355,7 @@ import { computed, ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "../store";
 import VuePdfEmbed from "vue-pdf-embed";
-import { getKnowledgeFile, getRecommendationsMultiple } from "../services/api";
+import { getKnowledgeFile, getRelatedDocuments } from "../services/api";
 
 const router = useRouter();
 const store = useAppStore();
@@ -355,7 +367,134 @@ const searchKeywords = ref(store.searchKeywords);
 const initialDocuments = computed(() => store.initialDocuments);
 const selectedDocuments = computed(() => store.selectedDocuments);
 const recommendedDocuments = computed(() => store.recommendedDocuments);
-const isLoading = computed(() => store.isLoading);
+const isInitialLoading = computed(() => store.isLoading);
+const isRecommendationLoading = ref(false);
+
+const RELATED_TOP_K = 10;
+const RELATED_PER_CHUNK_K = 8;
+const RELATED_SOURCE_CHUNK_LIMIT = 8;
+const RELATED_EVIDENCE_LIMIT = 3;
+const RECOMMENDATION_LIMIT = 20;
+const lastRecommendationSourceKey = ref("");
+
+const refreshRelatedRecommendations = async () => {
+  if (selectedDocuments.value.length === 0) {
+    store.recommendedDocuments = [];
+    lastRecommendationSourceKey.value = "";
+    return;
+  }
+
+  const initialIdSet = new Set(
+    (initialDocuments.value || []).map((doc) => doc.id)
+  );
+  const sourceIds = selectedDocuments.value
+    .filter((doc) => initialIdSet.has(doc.id))
+    .map((doc) => doc.id);
+
+  // 仅根据“初轮搜索结果中已选文档”生成推荐；勾选推荐文档本身不会触发新推荐。
+  const currentSourceKey = sourceIds
+    .slice()
+    .map((id) => String(id))
+    .sort((a, b) => a.localeCompare(b))
+    .join(",");
+  if (currentSourceKey === lastRecommendationSourceKey.value) {
+    return;
+  }
+
+  if (sourceIds.length === 0) {
+    store.recommendedDocuments = [];
+    lastRecommendationSourceKey.value = "";
+    return;
+  }
+
+  const selectedIdSet = new Set(selectedDocuments.value.map((doc) => doc.id));
+  const selectedRecommendedDocs = store.recommendedDocuments.filter((doc) =>
+    selectedIdSet.has(doc?.id)
+  );
+
+  try {
+    isRecommendationLoading.value = true;
+
+    // 对每个已选文档并发请求相关文档，避免单点失败影响整体结果。
+    const responseList = await Promise.allSettled(
+      sourceIds.map((paperId) =>
+        getRelatedDocuments(
+          paperId,
+          RELATED_TOP_K,
+          RELATED_PER_CHUNK_K,
+          RELATED_SOURCE_CHUNK_LIMIT,
+          RELATED_EVIDENCE_LIMIT
+        )
+      )
+    );
+
+    const merged = [];
+    console.log("Related documents API responses:", responseList); // DEBUG Log
+    responseList.forEach((result) => {
+      if (result.status === "fulfilled") {
+        const docs = Array.isArray(result.value?.results)
+          ? result.value.results
+          : Array.isArray(result.value?.related_papers)
+          ? result.value.related_papers
+          : Array.isArray(result.value?.papers)
+          ? result.value.papers
+          : Array.isArray(result.value?.data)
+          ? result.value.data
+          : Array.isArray(result.value?.related_documents)
+          ? result.value.related_documents
+          : [];
+
+        const normalizedDocs = docs
+          .map((doc) => {
+            if (!doc || typeof doc !== "object") return null;
+            const normalizedId = doc.id ?? doc.paper_id ?? doc.kb_id;
+            if (normalizedId == null) return null;
+            return {
+              ...doc,
+              id: normalizedId,
+              // 统一后端字段，保证推荐卡片可正常展示。
+              title: doc.title ?? doc.paper_title ?? `文档 ${normalizedId}`,
+              year: doc.year ?? doc.publish_year ?? null,
+            };
+          })
+          .filter(Boolean);
+
+        merged.push(...normalizedDocs);
+      } else {
+        console.error("Failed to fetch related documents", result.reason);
+      }
+    });
+
+    const excludedIds = new Set(
+      (initialDocuments.value || []).map((doc) => doc.id)
+    );
+    const deduped = [];
+
+    // 保留用户已在推荐区勾选的文档，避免刷新后从推荐列表消失。
+    selectedRecommendedDocs.forEach((doc) => {
+      if (!doc || doc.id == null) return;
+      if (excludedIds.has(doc.id)) return;
+      excludedIds.add(doc.id);
+      deduped.push(doc);
+    });
+
+    merged.forEach((doc) => {
+      if (!doc || doc.id == null) return;
+      if (excludedIds.has(doc.id)) return;
+      excludedIds.add(doc.id);
+      deduped.push(doc);
+    });
+
+    store.recommendedDocuments = deduped.slice(0, RECOMMENDATION_LIMIT);
+    lastRecommendationSourceKey.value = currentSourceKey;
+  } catch (e) {
+    console.error("Failed to refresh related recommendations", e);
+    store.recommendedDocuments = [];
+    lastRecommendationSourceKey.value = "";
+  } finally {
+    isRecommendationLoading.value = false;
+  }
+};
 
 // 页面加载时获取推荐
 onMounted(async () => {
@@ -372,17 +511,7 @@ onMounted(async () => {
       }
     });
 
-    const docIds = store.initialDocuments.map((doc) => doc.id);
-    try {
-      store.isLoading = true;
-      const recommendations = await getRecommendationsMultiple(docIds);
-      store.recommendedDocuments = recommendations || [];
-    } catch (e) {
-      console.error("Failed to fetch recommendations", e);
-      store.recommendedDocuments = [];
-    } finally {
-      store.isLoading = false;
-    }
+    await refreshRelatedRecommendations();
   }
 });
 
@@ -405,12 +534,14 @@ const isSelected = (docId) => {
 };
 
 // 切换选择状态
-const toggleSelection = (doc) => {
+const toggleSelection = async (doc) => {
   if (isSelected(doc.id)) {
     store.deselectDocument(doc.id);
   } else {
     store.selectDocument(doc);
   }
+
+  await refreshRelatedRecommendations();
 };
 
 // 预览相关状态
@@ -462,31 +593,27 @@ const closePreview = () => {
 };
 
 // 从预览中选择
-const selectFromPreview = () => {
+const selectFromPreview = async () => {
   if (currentPreviewDoc.value) {
     if (!isSelected(currentPreviewDoc.value.id)) {
       store.selectDocument(currentPreviewDoc.value);
+      await refreshRelatedRecommendations();
     }
     closePreview();
   }
 };
 
 // 取消选择文档
-const deselectDocument = (documentId) => {
+const deselectDocument = async (documentId) => {
   store.deselectDocument(documentId);
+  await refreshRelatedRecommendations();
 };
 
 // 下一步
-const nextStep = async () => {
+const nextStep = () => {
   if (selectedDocuments.value.length > 0) {
-    try {
-      await store.parseSelectedDocuments();
-      router.push("/template-select");
-      store.nextStep();
-    } catch (error) {
-      console.error("Parsing failed", error);
-      // Stay on page to show error
-    }
+    router.push("/template-select");
+    store.nextStep();
   }
 };
 </script>

@@ -55,11 +55,19 @@
           >
             模板库
           </router-link>
-          <a
-            href="#"
+          <router-link
+            to="/generation-history"
             class="text-base font-semibold text-secondary-600 hover:text-primary-600 transition-all duration-300 relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-1 after:bg-gradient-to-r after:from-primary-500 after:to-primary-600 after:transition-all after:duration-300 hover:after:w-full tracking-wide"
-            >帮助文档</a
+            active-class="text-primary-600 after:w-full"
           >
+            生成历史
+          </router-link>
+          <router-link
+            to="/help-docs"
+            class="text-base font-semibold text-secondary-600 hover:text-primary-600 transition-all duration-300 relative py-1 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-0 after:h-1 after:bg-gradient-to-r after:from-primary-500 after:to-primary-600 after:transition-all after:duration-300 hover:after:w-full tracking-wide"
+          >
+            帮助文档
+          </router-link>
         </nav>
 
         <div class="flex items-center space-x-4">
@@ -78,14 +86,39 @@
             >
               注册
             </router-link>
-            <router-link
-              v-if="store.isAuthenticated"
-              to="/profile"
-              class="px-4 py-2 text-base font-semibold text-secondary-700 border-2 border-gray-300 rounded-lg hover:text-primary-600 hover:border-gray-400 hover:bg-gray-50 transition-colors duration-200 flex items-center space-x-2"
-            >
-              <i class="fa fa-user-circle"></i>
-              <span>个人中心</span>
-            </router-link>
+            <div v-if="store.isAuthenticated" class="relative group">
+              <button
+                type="button"
+                class="px-4 py-2 text-base font-semibold text-secondary-700 border-2 border-gray-300 rounded-lg hover:text-primary-600 hover:border-gray-400 hover:bg-gray-50 transition-colors duration-200 flex items-center space-x-2"
+              >
+                <i class="fa fa-user-circle"></i>
+                <i class="fa fa-angle-down text-sm"></i>
+              </button>
+
+              <div
+                class="absolute right-0 top-full pt-2 min-w-[150px] opacity-0 invisible translate-y-1 group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 transition-all duration-200"
+              >
+                <div
+                  class="bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden"
+                >
+                  <router-link
+                    to="/profile"
+                    class="w-full px-4 py-2.5 text-left text-sm text-secondary-700 hover:bg-gray-50 hover:text-primary-600 transition-colors flex items-center gap-2"
+                  >
+                    <i class="fa fa-user"></i>
+                    <span>个人中心</span>
+                  </router-link>
+                  <button
+                    type="button"
+                    @click="handleLogout"
+                    class="w-full px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+                  >
+                    <i class="fa fa-sign-out"></i>
+                    <span>退出登录</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
           <button
             class="md:hidden text-secondary-600 hover:text-primary-600 transition-colors"
@@ -115,12 +148,12 @@
             <span class="text-secondary-400 text-sm ml-2">| 版本 1.0.0</span>
           </div>
           <div class="flex space-x-8">
-            <a
-              href="#"
+            <router-link
+              to="/help-docs"
               class="text-sm text-secondary-500 hover:text-primary-600 transition-colors flex items-center"
             >
               <i class="fa fa-question-circle mr-2"></i> 帮助中心
-            </a>
+            </router-link>
             <a
               href="#"
               class="text-sm text-secondary-500 hover:text-primary-600 transition-colors flex items-center"
@@ -148,10 +181,17 @@
 <script setup>
 import { useAppStore } from "./store";
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 import AuthDialog from "./components/AuthDialog.vue";
 
 const store = useAppStore();
+const router = useRouter();
 const authDialogRef = ref(null);
+
+const handleLogout = () => {
+  store.logout();
+  router.push("/login");
+};
 
 // 暴露给路由守卫使用
 globalThis.$authDialog = authDialogRef;

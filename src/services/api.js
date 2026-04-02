@@ -52,6 +52,24 @@ export const getKnowledgeFile = (fileId) => {
   })
 }
 
+// 获取单篇论文的相关文章
+export const getRelatedDocuments = (
+  paperId,
+  topK = 10,
+  perChunkK = 8,
+  sourceChunkLimit = 8,
+  evidenceLimit = 3
+) => {
+  return api.get(`/api/graphrag/related-papers/${paperId}`, {
+    params: {
+      top_k: topK,
+      per_chunk_k: perChunkK,
+      source_chunk_limit: sourceChunkLimit,
+      evidence_limit: evidenceLimit
+    }
+  })
+}
+
 // 获取类似推荐文章
 export const getRecommendationsMultiple = (kbIds, limit = 10) => {
   // Use URLSearchParams to properly serialize array parameters (kb_ids=1&kb_ids=2...)
@@ -73,6 +91,21 @@ export const buildTemplate = (description) => {
       request: description
     }
   });
+}
+
+// 保存模板到数据库
+export const addTemplate = (information) => {
+  return api.put('/template/add', information);
+}
+
+// 获取当前用户可见模板
+export const getMyTemplates = () => {
+  return api.get('/template/my');
+}
+
+// 根据模板ID + GraphRAG 生成结构化摘要
+export const generateSummaryByTemplate = (templateId, body) => {
+  return api.post(`/template/${templateId}/summary`, body);
 }
 
 // 批量解析知识库条目
